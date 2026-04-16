@@ -1,0 +1,687 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Project Spartan Tracker</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  body { margin: 0; background: #F7F7F8; font-family: 'DM Sans', sans-serif; }
+  input, textarea, select, button { font-family: 'DM Sans', sans-serif; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useEffect, useRef, useCallback } = React;
+
+const SUPABASE_URL = "https://idpscmxvcrryqvkyhoka.supabase.co";
+const SUPABASE_KEY = "sb_publishable_JFQ0fCmfC_AVm8yPtbLSjw_dmCAXy_-";
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+const STORAGE_KEY = "spartan-tracker-v4";
+const PASSWORD = "spartanprogresstracker";
+const POLL_INTERVAL = 30000;
+
+async function dbGet(key) {
+  const { data } = await sb.from("spartan_data").select("value").eq("key", key).maybeSingle();
+  return data?.value ? JSON.parse(data.value) : null;
+}
+async function dbSet(key, value) {
+  await sb.from("spartan_data").upsert({ key, value: JSON.stringify(value), updated_at: new Date().toISOString() });
+}
+
+const LANES = [
+  { name: "Lane 1: New Revenue", owner: "José", team: "Luken, Lindi, Caterina, Ali, Daisy", color: "#E63946",
+    targets: [{ id: "1a", label: "Net-new revenue", goal: 150000, format: "eur" }] },
+  { name: "Lane 2: Existing Business", owner: "JJ", team: "Michelle, Elisa, Carmen, Jesus, Tony, Carolina", color: "#457B9D",
+    targets: [{ id: "2a", label: "Clinic contract reactivations (60 days)", goal: 5, format: "num" }, { id: "2b", label: "Growth on PC & Lab services", goal: 5, format: "pct" }] },
+  { name: "Lane 3: DSD Online & Education", owner: "Carlos", team: "John Peterson, Eric Peterson + marketing support", color: "#2A9D8F",
+    targets: [{ id: "3a", label: "Revenue", goal: 40000, format: "eur" }, { id: "3b", label: "Tickets sold", goal: 90, format: "num" }, { id: "3c", label: "New platform users", goal: 400, format: "num" }, { id: "3d", label: "Activation rate", goal: 50, format: "pct" }] },
+  { name: "Lane 4: DSD Centre", owner: "John", team: "Planning Centre + Lab Operations", color: "#E9C46A",
+    targets: [
+      { id: "4a", label: "OTDR", goal: 95, format: "pct", group: "Planning Centre", goalLabel: "≥ 95%", threshold: true },
+      { id: "4b", label: "Turnaround (working days)", goal: 3, format: "num", lowerIsBetter: true, group: "Planning Centre", goalLabel: "≤ 3 days", threshold: true },
+      { id: "4c", label: "CPI", goal: 0.90, format: "dec", group: "Planning Centre", goalLabel: "≥ 0.90", threshold: true },
+      { id: "4d", label: "Revenue / month", goal: 140000, format: "eur", group: "Lab" },
+      { id: "4e", label: "LER", goal: 3.0, format: "dec", group: "Lab", goalLabel: "≥ 3.00", threshold: true },
+      { id: "4f", label: "Exploration Phase", goal: null, format: "milestone", group: "Projects" },
+      { id: "4g", label: "KPI systems live", goal: 4, format: "num", group: "Projects" },
+      { id: "4h", label: "New website launched", goal: null, format: "milestone", group: "Projects" },
+      { id: "4i", label: "Software partnership", goal: null, format: "milestone", group: "Projects" },
+    ] },
+  { name: "Lane 5: Growth Hub", owner: "Jesús", team: "Storm, Gareth + Brendon", color: "#F4A261",
+    targets: [{ id: "5a", label: "MRR (run rate)", goal: 21000, format: "eur", goalLabel: "€18–21K/mo" }] },
+];
+
+const MEETINGS = [
+  { id: "m1", label: "14 Apr" }, { id: "m2", label: "28 Apr" }, { id: "m3", label: "12 May" },
+  { id: "m4", label: "26 May" }, { id: "m5", label: "9 Jun" }, { id: "m6", label: "23 Jun" }, { id: "m7", label: "7 Jul" },
+];
+
+const STATUS_CYCLE = [null, "on-track", "at-risk", "off-track"];
+const STATUS_STYLES = {
+  null: { label: "—", bg: "transparent", text: "#ccc", dot: "#ddd", cellBg: "#FAFAFA" },
+  "on-track": { label: "On Track", bg: "#D4EDDA", text: "#155724", dot: "#28A745", cellBg: "#EAFAF0" },
+  "at-risk": { label: "At Risk", bg: "#FFF3CD", text: "#856404", dot: "#FFC107", cellBg: "#FFFBEB" },
+  "off-track": { label: "Off Track", bg: "#F8D7DA", text: "#721C24", dot: "#DC3545", cellBg: "#FEF2F2" },
+};
+const MS_CYCLE = ["not-started", "in-progress", "done"];
+const MS_STYLES = {
+  "not-started": { label: "Not Started", bg: "#F8D7DA", text: "#721C24", cellBg: "#FEF2F2" },
+  "in-progress": { label: "In Prog", bg: "#DBEAFE", text: "#1E40AF", cellBg: "#EFF6FF" },
+  "done": { label: "Done", bg: "#D4EDDA", text: "#155724", cellBg: "#EAFAF0" },
+};
+const SYS_MS_STYLES = {
+  "not-started": { label: "Not Started", bg: "#F8D7DA", text: "#721C24", dot: "#DC3545" },
+  "in-progress": { label: "In Progress", bg: "#DBEAFE", text: "#1E40AF", dot: "#3B82F6" },
+  "done": { label: "Done ✓", bg: "#D4EDDA", text: "#155724", dot: "#28A745" },
+};
+
+const PRESET_SYSTEMS = {
+  0: [
+    { id: "ps_0_1", name: "Sales diagnostic map", milestones: [
+      { id: "ps_0_1_a", label: "Draft problem-solution-consultant map document" },
+      { id: "ps_0_1_b", label: "Validate map with JJ, John and Carlos individually" },
+      { id: "ps_0_1_c", label: "Share final map with full team before CAM Miami" },
+    ]},
+    { id: "ps_0_2", name: "Meeting engine", milestones: [
+      { id: "ps_0_2_a", label: "Document discovery call question framework" },
+      { id: "ps_0_2_b", label: "Define follow-up sequence and ownership" },
+      { id: "ps_0_2_c", label: "Document what a closed deal looks like step by step" },
+    ]},
+  ],
+  1: [
+    { id: "ps_1_1", name: "Account management protocol", milestones: [
+      { id: "ps_1_1_a", label: "Map current Michelle vs Elisa process — spot differences" },
+      { id: "ps_1_1_b", label: "Draft single shared account management process" },
+      { id: "ps_1_1_c", label: "Train team on unified protocol" },
+    ]},
+    { id: "ps_1_2", name: "Clinic reactivation playbook", milestones: [
+      { id: "ps_1_2_a", label: "Document current bundle offers with Tony and Carolina" },
+      { id: "ps_1_2_b", label: "Define reactivation touchpoint sequence" },
+      { id: "ps_1_2_c", label: "Test playbook on 2–3 dormant accounts" },
+    ]},
+  ],
+  2: [
+    { id: "ps_2_1", name: "Content production pipeline", milestones: [
+      { id: "ps_2_1_a", label: "Map current process from idea to published" },
+      { id: "ps_2_1_b", label: "Define roles, tools and cadence at each step" },
+      { id: "ps_2_1_c", label: "Document and share with team" },
+    ]},
+    { id: "ps_2_2", name: "Platform activation sequence", milestones: [
+      { id: "ps_2_2_a", label: "Define what activated looks like (visits, actions, timeframe)" },
+      { id: "ps_2_2_b", label: "Design automated post-signup touchpoint sequence" },
+      { id: "ps_2_2_c", label: "Implement and track activation rate against 50% target" },
+    ]},
+  ],
+  3: [
+    { id: "ps_3_1", name: "Lab quality control process", milestones: [
+      { id: "ps_3_1_a", label: "Identify the top 3 recurring error types" },
+      { id: "ps_3_1_b", label: "Design pre-delivery checklist and sign-off step" },
+      { id: "ps_3_1_c", label: "Implement and measure error rate over 2 cycles" },
+    ]},
+    { id: "ps_3_2", name: "Planning Centre case flow protocol", milestones: [
+      { id: "ps_3_2_a", label: "Document current end-to-end case flow" },
+      { id: "ps_3_2_b", label: "Identify gaps and standardise handoff points" },
+      { id: "ps_3_2_c", label: "Finalise and sign off documented protocol" },
+    ]},
+  ],
+  4: [
+    { id: "ps_4_1", name: "Client onboarding and delivery sequence", milestones: [
+      { id: "ps_4_1_a", label: "Document current onboarding steps for existing 11 clients" },
+      { id: "ps_4_1_b", label: "Standardise into a repeatable sequence" },
+      { id: "ps_4_1_c", label: "Test on next 2 new clients" },
+    ]},
+    { id: "ps_4_2", name: "Weekly operating rhythm", milestones: [
+      { id: "ps_4_2_a", label: "Define recurring meetings cadence for Storm, Gareth and Brendon" },
+      { id: "ps_4_2_b", label: "Set up agenda template and reporting format" },
+      { id: "ps_4_2_c", label: "Run for 2 weeks and adjust" },
+    ]},
+  ],
+};
+
+const DEFAULT_DATA = { statuses: {}, values: {}, notes: {}, milestones: {}, systems: [], crosslane: {}, lane_systems: {}, sys_ms_status: {}, biweekly: {} };
+
+function fmtVal(val, format) {
+  if (val === "" || val == null) return "";
+  if (format === "milestone" || format === "text") return val;
+  if (format === "eur") { const n = Number(val); return n >= 1000 ? "€" + (n/1000).toFixed(n%1000===0?0:1) + "K" : "€" + n; }
+  if (format === "pct") return Number(val).toFixed(1) + "%";
+  if (format === "dec") return Number(val).toFixed(2);
+  return String(val);
+}
+function calcProg(raw, t) {
+  if (!raw || !t.goal) return null;
+  const n = Number(raw); if (isNaN(n)) return null;
+  let pct;
+  if (t.threshold) { pct = t.lowerIsBetter ? (n <= t.goal ? 100 : 0) : (n >= t.goal ? 100 : 0); }
+  else { pct = t.lowerIsBetter ? Math.max(0,Math.min(100,((2*t.goal-n)/t.goal)*100)) : Math.max(0,Math.min(100,(n/t.goal)*100)); }
+  return Math.round(pct);
+}
+
+function ProgBar({ pct, color }) {
+  const c = color || (pct >= 90 ? "#28A745" : pct >= 60 ? "#FFC107" : "#DC3545");
+  return (
+    <div>
+      <div style={{ height: 6, background: "#E8E8E8", borderRadius: 3, overflow: "hidden" }}>
+        <div style={{ width: `${Math.min(pct,100)}%`, height: "100%", borderRadius: 3, background: c, transition: "width 0.4s ease" }} />
+      </div>
+      <div style={{ fontSize: 10, color: "#888", marginTop: 3, textAlign: "right", fontFamily: "'DM Mono',monospace" }}>{pct}%</div>
+    </div>
+  );
+}
+
+function SectionHead({ number, title, subtitle, color }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16, paddingBottom: 12, borderBottom: `2px solid ${color}25` }}>
+      <span style={{ fontSize: 26, fontWeight: 700, color, fontFamily: "Georgia,serif", minWidth: 34, lineHeight: 1 }}>{number}</span>
+      <div>
+        <div style={{ fontSize: 14, fontWeight: 700, color: "#1a1a1a" }}>{title}</div>
+        <div style={{ fontSize: 11, color: "#aaa", marginTop: 1 }}>{subtitle}</div>
+      </div>
+    </div>
+  );
+}
+
+function ValueCard({ t, k, data, setData, unlocked, withAuth, laneColor }) {
+  const [editing, setEditing] = useState(false);
+  const [editVal, setEditVal] = useState("");
+  const inputRef = useRef(null);
+  const status = data.statuses[k] || null;
+  const sStyle = STATUS_STYLES[status];
+  const raw = data.values[k];
+  const isMilestone = t.format === "milestone";
+  const ms = data.milestones?.[k] || "not-started";
+  const msStyle = MS_STYLES[ms];
+  const pct = !isMilestone ? calcProg(raw, t) : null;
+  const goalDisp = t.goalLabel || (t.goal != null ? fmtVal(t.goal, t.format) : "—");
+  useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
+  function commitEdit() { setData(d => ({ ...d, values: { ...d.values, [k]: editVal } })); setEditing(false); }
+  function cycleStatus() { const next = STATUS_CYCLE[(STATUS_CYCLE.indexOf(status) + 1) % STATUS_CYCLE.length]; setData(d => ({ ...d, statuses: { ...d.statuses, [k]: next } })); }
+  function cycleMilestone() { const next = MS_CYCLE[(MS_CYCLE.indexOf(ms) + 1) % MS_CYCLE.length]; setData(d => ({ ...d, milestones: { ...d.milestones, [k]: next } })); }
+  const cardBg = isMilestone ? msStyle.cellBg : sStyle.cellBg;
+  const cardBorder = isMilestone ? "#E8E8E8" : (status ? sStyle.bg : "#E8E8E8");
+  return (
+    <div style={{ background: cardBg, border: `1.5px solid ${cardBorder}`, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+      {t.group && <div style={{ fontSize: 9, color: "#bbb", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em" }}>{t.group}</div>}
+      <div style={{ fontSize: 12, fontWeight: 600, color: "#444", lineHeight: 1.4, minHeight: 32 }}>{t.label}</div>
+      {isMilestone ? (
+        <button onClick={() => withAuth(cycleMilestone)} style={{ padding: "10px", borderRadius: 8, border: "none", background: msStyle.bg, color: msStyle.text, fontSize: 13, fontWeight: 700, cursor: unlocked ? "pointer" : "default", width: "100%" }}>{msStyle.label}</button>
+      ) : (<>
+        <div>
+          {editing ? (
+            <input ref={inputRef} value={editVal} onChange={e => setEditVal(e.target.value)} onBlur={commitEdit} onKeyDown={e => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditing(false); }}
+              style={{ fontSize: 26, fontWeight: 700, fontFamily: "'DM Mono',monospace", border: "none", borderBottom: `2px solid ${laneColor}`, outline: "none", background: "transparent", width: "100%", padding: "2px 4px" }} />
+          ) : (
+            <span onClick={() => withAuth(() => { setEditVal(raw || ""); setEditing(true); })}
+              style={{ fontSize: 26, fontWeight: 700, fontFamily: "'DM Mono',monospace", color: raw ? "#1a1a1a" : "#ccc", cursor: unlocked ? "pointer" : "default", display: "block", borderBottom: unlocked ? "2px dashed #E0E0E0" : "none", padding: "2px 4px", minHeight: 38 }}>
+              {raw ? fmtVal(raw, t.format) : "—"}
+            </span>
+          )}
+          <div style={{ fontSize: 10, color: "#bbb", fontFamily: "'DM Mono',monospace", marginTop: 4 }}>Goal: {goalDisp}</div>
+        </div>
+        <button onClick={() => withAuth(cycleStatus)} style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 10px", borderRadius: 8, border: "none", background: sStyle.bg === "transparent" ? "#F0F0F0" : sStyle.bg, cursor: unlocked ? "pointer" : "default", alignSelf: "flex-start" }}>
+          <span style={{ width: 8, height: 8, borderRadius: "50%", background: sStyle.dot, flexShrink: 0 }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: sStyle.text }}>{sStyle.label}</span>
+        </button>
+        {pct !== null && <ProgBar pct={pct} />}
+      </>)}
+    </div>
+  );
+}
+
+function BiweeklyTab({ data, setData, unlocked, withAuth }) {
+  const [laneIdx, setLaneIdx] = useState(0);
+  const [meetingId, setMeetingId] = useState("m1");
+  const [addingSys, setAddingSys] = useState(false);
+  const [newSysName, setNewSysName] = useState("");
+  const [addingMs, setAddingMs] = useState(null);
+  const [newMsLabel, setNewMsLabel] = useState("");
+  const lane = LANES[laneIdx];
+  const ky = (tid, mid) => `${tid}::${mid}`;
+  const laneSystems = (data.lane_systems?.[laneIdx]?.length > 0) ? data.lane_systems[laneIdx] : (PRESET_SYSTEMS[laneIdx] || []);
+  const captureKey = `${laneIdx}::${meetingId}`;
+  const capture = data.biweekly?.[captureKey] || { blockers: "", commitments: "" };
+  const mIdx = MEETINGS.findIndex(m => m.id === meetingId);
+  const prevMeeting = mIdx > 0 ? MEETINGS[mIdx - 1] : null;
+  const prevCapture = prevMeeting ? (data.biweekly?.[`${laneIdx}::${prevMeeting.id}`] || {}) : null;
+
+  function getSysMsStatus(sysId, msId) {
+    const k = `${sysId}::${msId}::${meetingId}`;
+    if (data.sys_ms_status?.[k] !== undefined) return data.sys_ms_status[k];
+    for (let i = mIdx - 1; i >= 0; i--) { const pk = `${sysId}::${msId}::${MEETINGS[i].id}`; if (data.sys_ms_status?.[pk] !== undefined) return data.sys_ms_status[pk]; }
+    return "not-started";
+  }
+  function cycleSysMilestone(sysId, msId) {
+    const k = `${sysId}::${msId}::${meetingId}`;
+    const cur = getSysMsStatus(sysId, msId);
+    const cyc = ["not-started","in-progress","done"];
+    setData(d => ({ ...d, sys_ms_status: { ...d.sys_ms_status, [k]: cyc[(cyc.indexOf(cur)+1)%3] } }));
+  }
+  function getSysProgress(sys) {
+    if (!sys.milestones.length) return 0;
+    return Math.round(sys.milestones.filter(m => getSysMsStatus(sys.id, m.id) === "done").length / sys.milestones.length * 100);
+  }
+  function materialise(d) {
+    if (d.lane_systems?.[laneIdx]?.length > 0) return d.lane_systems[laneIdx];
+    return PRESET_SYSTEMS[laneIdx] || [];
+  }
+  function addSystem(name) {
+    if (!name.trim()) return;
+    const id = "ls_" + Date.now();
+    setData(d => ({ ...d, lane_systems: { ...d.lane_systems, [laneIdx]: [...materialise(d), { id, name: name.trim(), milestones: [] }] } }));
+    setNewSysName(""); setAddingSys(false);
+  }
+  function removeSystem(sysId) {
+    setData(d => ({ ...d, lane_systems: { ...d.lane_systems, [laneIdx]: materialise(d).filter(s => s.id !== sysId) } }));
+  }
+  function addMilestone(sysId) {
+    if (!newMsLabel.trim()) return;
+    const msId = "lm_" + Date.now();
+    setData(d => ({ ...d, lane_systems: { ...d.lane_systems, [laneIdx]: materialise(d).map(s => s.id===sysId ? {...s, milestones: [...s.milestones, {id:msId, label:newMsLabel.trim()}]} : s) } }));
+    setNewMsLabel(""); setAddingMs(null);
+  }
+  function removeMilestone(sysId, msId) {
+    setData(d => ({ ...d, lane_systems: { ...d.lane_systems, [laneIdx]: materialise(d).map(s => s.id===sysId ? {...s, milestones: s.milestones.filter(m=>m.id!==msId)} : s) } }));
+  }
+  function updateCapture(field, val) {
+    setData(d => ({ ...d, biweekly: { ...d.biweekly, [captureKey]: { ...capture, [field]: val } } }));
+  }
+
+  return (
+    <div>
+      <div style={{ marginBottom: 18 }}>
+        <div style={{ fontSize: 10, color: "#aaa", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Lane owner</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {LANES.map((l, i) => (
+            <button key={i} onClick={() => { setLaneIdx(i); setAddingSys(false); setAddingMs(null); }}
+              style={{ padding: "9px 14px", borderRadius: 10, border: `2px solid ${laneIdx===i ? l.color : "#E8E8E8"}`, background: laneIdx===i ? l.color : "#fff", color: laneIdx===i ? "#fff" : "#777", fontWeight: 700, fontSize: 12, cursor: "pointer", transition: "all 0.15s", textAlign: "left", lineHeight: 1.4 }}>
+              <div>{l.owner}</div>
+              <div style={{ fontSize: 10, fontWeight: 400, opacity: 0.75 }}>Lane {i+1}</div>
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 10, color: "#aaa", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Meeting date</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {MEETINGS.map(m => (
+            <button key={m.id} onClick={() => setMeetingId(m.id)}
+              style={{ padding: "5px 14px", borderRadius: 20, border: `1.5px solid ${meetingId===m.id ? lane.color : "#ddd"}`, background: meetingId===m.id ? lane.color : "transparent", color: meetingId===m.id ? "#fff" : "#666", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Mono',monospace", transition: "all 0.15s" }}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div style={{ padding: "16px 22px", background: lane.color, borderRadius: 12, marginBottom: 28, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <div>
+          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Biweekly review</div>
+          <div style={{ color: "#fff", fontSize: 17, fontWeight: 700, lineHeight: 1.2 }}>{lane.name}</div>
+          <div style={{ color: "rgba(255,255,255,0.7)", fontSize: 11, marginTop: 3 }}>{lane.team}</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ color: "rgba(255,255,255,0.6)", fontSize: 10, marginBottom: 2 }}>Meeting</div>
+          <div style={{ color: "#fff", fontSize: 22, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{MEETINGS.find(m=>m.id===meetingId)?.label}</div>
+        </div>
+      </div>
+      <div style={{ marginBottom: 32 }}>
+        <SectionHead number="01" title="Target review" subtitle="Update actuals together in real time · tap the value to enter · tap the pill to cycle status" color={lane.color} />
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+          {lane.targets.map(t => <ValueCard key={t.id} t={t} k={ky(t.id, meetingId)} data={data} setData={setData} unlocked={unlocked} withAuth={withAuth} laneColor={lane.color} />)}
+        </div>
+      </div>
+      <div style={{ marginBottom: 32 }}>
+        <SectionHead number="02" title="Systems check" subtitle="The 1–2 capacity-building systems this lane is developing" color={lane.color} />
+        {laneSystems.length === 0 && (
+          <div style={{ padding: "28px 20px", textAlign: "center", border: "2px dashed #E0E0E0", borderRadius: 10, marginBottom: 14, color: "#bbb" }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#999", marginBottom: 4 }}>No systems defined yet</div>
+          </div>
+        )}
+        {laneSystems.map(sys => {
+          const prog = getSysProgress(sys);
+          const doneCount = sys.milestones.filter(m => getSysMsStatus(sys.id, m.id) === "done").length;
+          return (
+            <div key={sys.id} style={{ border: "1.5px solid #E8E8E8", borderRadius: 10, marginBottom: 12, overflow: "hidden" }}>
+              <div style={{ padding: "11px 14px", background: "#FAFAFA", display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 14, flexShrink: 0 }}>⚙</span>
+                <span style={{ fontSize: 13, fontWeight: 700, color: "#1a1a1a", flex: 1 }}>{sys.name}</span>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  {sys.milestones.length > 0 && <span style={{ fontSize: 11, color: "#aaa", fontFamily: "'DM Mono',monospace" }}>{doneCount}/{sys.milestones.length}</span>}
+                  <div style={{ width: 64, height: 5, background: "#E8E8E8", borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${prog}%`, height: "100%", borderRadius: 3, background: prog===100 ? "#28A745" : lane.color, transition: "width 0.4s" }} />
+                  </div>
+                  <span style={{ fontSize: 10, color: "#888", fontFamily: "'DM Mono',monospace", minWidth: 28 }}>{prog}%</span>
+                  <button onClick={() => withAuth(() => removeSystem(sys.id))} style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc", fontSize: 12, padding: "2px 6px", borderRadius: 4 }} onMouseEnter={e => e.target.style.color="#DC3545"} onMouseLeave={e => e.target.style.color="#ccc"} title="Remove system">✕</button>
+                </div>
+              </div>
+              <div style={{ padding: "10px 14px" }}>
+                {sys.milestones.length === 0 && addingMs !== sys.id && <div style={{ fontSize: 12, color: "#ccc", fontStyle: "italic", marginBottom: 8 }}>No milestones yet</div>}
+                {sys.milestones.map(ms => {
+                  const msSt = getSysMsStatus(sys.id, ms.id);
+                  const msStyle = SYS_MS_STYLES[msSt];
+                  return (
+                    <div key={ms.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 8, marginBottom: 6, background: msSt==="not-started" ? "#FEF2F2" : msStyle.bg+"35", border: `1px solid ${msSt==="not-started" ? "#F8D7DA" : msStyle.dot+"50"}` }}>
+                      <button onClick={() => withAuth(() => cycleSysMilestone(sys.id, ms.id))}
+                        style={{ width: 22, height: 22, minWidth: 22, borderRadius: "50%", border: `2px solid ${msStyle.dot}`, background: msSt==="done" ? msStyle.dot : "transparent", cursor: unlocked ? "pointer" : "default", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, color: msSt==="done" ? "#fff" : msStyle.dot, fontWeight: 700, transition: "all 0.2s" }}>
+                        {msSt==="done" ? "✓" : msSt==="in-progress" ? "◑" : ""}
+                      </button>
+                      <span style={{ flex: 1, fontSize: 12, color: msSt==="done" ? "#aaa" : "#333", textDecoration: msSt==="done" ? "line-through" : "none" }}>{ms.label}</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, padding: "2px 8px", borderRadius: 8, background: msStyle.bg, color: msStyle.text, whiteSpace: "nowrap" }}>{msStyle.label}</span>
+                      <button onClick={() => withAuth(() => removeMilestone(sys.id, ms.id))} style={{ background: "none", border: "none", cursor: "pointer", color: "#ccc", fontSize: 11, padding: "2px 6px", borderRadius: 4 }} onMouseEnter={e => e.target.style.color="#DC3545"} onMouseLeave={e => e.target.style.color="#ccc"} title="Remove milestone">✕</button>
+                    </div>
+                  );
+                })}
+                {addingMs === sys.id ? (
+                  <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
+                    <input autoFocus value={newMsLabel} onChange={e => setNewMsLabel(e.target.value)} onKeyDown={e => { if (e.key==="Enter") addMilestone(sys.id); if (e.key==="Escape") setAddingMs(null); }} placeholder="Milestone label…" style={{ flex: 1, padding: "6px 10px", border: "1.5px solid #ddd", borderRadius: 6, fontSize: 12, outline: "none" }} />
+                    <button onClick={() => addMilestone(sys.id)} style={{ padding: "6px 12px", borderRadius: 6, border: "none", background: lane.color, color: "#fff", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Add</button>
+                    <button onClick={() => setAddingMs(null)} style={{ padding: "6px 10px", borderRadius: 6, border: "1.5px solid #ddd", background: "transparent", color: "#999", fontSize: 11, cursor: "pointer" }}>✕</button>
+                  </div>
+                ) : unlocked && (
+                  <button onClick={() => setAddingMs(sys.id)} style={{ marginTop: 4, padding: "5px 12px", borderRadius: 6, border: `1.5px dashed ${lane.color}70`, background: "transparent", color: lane.color, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>+ Add milestone</button>
+                )}
+              </div>
+            </div>
+          );
+        })}
+        {addingSys ? (
+          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+            <input autoFocus value={newSysName} onChange={e => setNewSysName(e.target.value)} onKeyDown={e => { if (e.key==="Enter") addSystem(newSysName); if (e.key==="Escape") setAddingSys(false); }} placeholder="System name…" style={{ flex: 1, padding: "8px 12px", border: "1.5px solid #ddd", borderRadius: 8, fontSize: 13, outline: "none" }} />
+            <button onClick={() => addSystem(newSysName)} style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: lane.color, color: "#fff", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Add</button>
+            <button onClick={() => setAddingSys(false)} style={{ padding: "8px 12px", borderRadius: 8, border: "1.5px solid #ddd", background: "transparent", color: "#999", fontSize: 12, cursor: "pointer" }}>✕</button>
+          </div>
+        ) : unlocked && (
+          <button onClick={() => setAddingSys(true)} style={{ padding: "10px", borderRadius: 10, border: `2px dashed ${lane.color}50`, background: "transparent", color: lane.color, fontSize: 12, fontWeight: 700, cursor: "pointer", width: "100%", marginTop: 4 }}>+ Add system</button>
+        )}
+      </div>
+      <div style={{ marginBottom: 32 }}>
+        <SectionHead number="03" title="Meeting capture" subtitle="Lock in blockers and commitments before closing the laptop" color={lane.color} />
+        {prevCapture?.commitments && (
+          <div style={{ padding: "12px 16px", background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 8, marginBottom: 14 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>⏮ Commitments from {prevMeeting?.label}</div>
+            <div style={{ fontSize: 12, color: "#555", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{prevCapture.commitments}</div>
+          </div>
+        )}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          {[
+            { key: "blockers", label: "Blockers to escalate", accent: "#DC3545", border: "#F8D7DA", activeBg: "#FEF2F2", placeholder: "What's blocking progress? What needs Brendon's attention or another lane's input?" },
+            { key: "commitments", label: "Commitments before next meeting", accent: "#28A745", border: "#D4EDDA", activeBg: "#EAFAF0", placeholder: "What is each person committing to do before the next biweekly?" },
+          ].map(({ key, label, accent, border, activeBg, placeholder }) => (
+            <div key={key}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: accent, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>{label}</div>
+              <textarea value={capture[key]} readOnly={!unlocked} onChange={e => { if (unlocked) updateCapture(key, e.target.value); }} onClick={!unlocked ? () => withAuth(() => {}) : undefined}
+                placeholder={!unlocked ? "🔒 Unlock to edit" : placeholder} rows={5}
+                style={{ width: "100%", border: `1.5px solid ${capture[key] ? border : "#E8E8E8"}`, borderRadius: 8, padding: "10px 12px", fontSize: 12, resize: "vertical", outline: "none", background: capture[key] ? activeBg : "#fff", boxSizing: "border-box", lineHeight: 1.7, color: "#333", cursor: !unlocked ? "pointer" : "text" }} />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function App() {
+  const [data, setDataRaw] = useState(DEFAULT_DATA);
+  const [loaded, setLoaded] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState(null);
+  const [editCell, setEditCell] = useState(null);
+  const [editVal, setEditVal] = useState("");
+  const [noteCell, setNoteCell] = useState(null);
+  const [noteText, setNoteText] = useState("");
+  const [tab, setTab] = useState("biweekly");
+  const [newSystemName, setNewSystemName] = useState("");
+  const [presenting, setPresenting] = useState(false);
+  const [slideIdx, setSlideIdx] = useState(0);
+  const [presentMeeting, setPresentMeeting] = useState("m1");
+  const [unlocked, setUnlocked] = useState(false);
+  const [showPwModal, setShowPwModal] = useState(false);
+  const [pwInput, setPwInput] = useState("");
+  const [pwError, setPwError] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null);
+  const saveTimer = useRef(null);
+  const lastDataRef = useRef(null);
+
+  function setData(updater) {
+    setDataRaw(prev => {
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(async () => {
+        setSaving(true);
+        await dbSet(STORAGE_KEY, next);
+        setSaving(false);
+        setLastSaved(new Date());
+        lastDataRef.current = JSON.stringify(next);
+      }, 800);
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    (async () => {
+      const remote = await dbGet(STORAGE_KEY);
+      if (remote) { setDataRaw({ ...DEFAULT_DATA, ...remote }); lastDataRef.current = JSON.stringify({ ...DEFAULT_DATA, ...remote }); }
+      setLoaded(true);
+    })();
+  }, []);
+
+  useEffect(() => {
+    if (!loaded) return;
+    const poll = setInterval(async () => {
+      const remote = await dbGet(STORAGE_KEY);
+      if (remote) {
+        const remoteStr = JSON.stringify({ ...DEFAULT_DATA, ...remote });
+        if (remoteStr !== lastDataRef.current) {
+          setDataRaw({ ...DEFAULT_DATA, ...remote });
+          lastDataRef.current = remoteStr;
+        }
+      }
+    }, POLL_INTERVAL);
+    return () => clearInterval(poll);
+  }, [loaded]);
+
+  function withAuth(fn) {
+    if (unlocked) { fn(); return; }
+    setPendingAction(() => fn); setPwInput(""); setPwError(false); setShowPwModal(true);
+  }
+  function submitPassword() {
+    if (pwInput === PASSWORD) { setUnlocked(true); setShowPwModal(false); if (pendingAction) { pendingAction(); setPendingAction(null); } }
+    else setPwError(true);
+  }
+
+  const ky = (tid, mid) => `${tid}::${mid}`;
+  function cycleStatus(tid, mid) { const k=ky(tid,mid); const cur=data.statuses[k]||null; const next=STATUS_CYCLE[(STATUS_CYCLE.indexOf(cur)+1)%STATUS_CYCLE.length]; setData(d=>({...d,statuses:{...d.statuses,[k]:next}})); }
+  function cycleMilestone(tid, mid) { const k=ky(tid,mid); const cur=data.milestones[k]||"not-started"; const next=MS_CYCLE[(MS_CYCLE.indexOf(cur)+1)%MS_CYCLE.length]; setData(d=>({...d,milestones:{...d.milestones,[k]:next}})); }
+  function commitVal() { if (editCell) { setData(d=>({...d,values:{...d.values,[editCell]:editVal}})); setEditCell(null); } }
+  function commitNote() { if (noteCell) { setData(d=>({...d,notes:{...d.notes,[noteCell]:noteText}})); setNoteCell(null); } }
+
+  function getLatestProgress(t) {
+    for (let i = MEETINGS.length-1; i >= 0; i--) {
+      const raw = data.values[ky(t.id, MEETINGS[i].id)];
+      if (raw !== undefined && raw !== "") { const pct = calcProg(raw, t); if (pct !== null) return { pct, value: fmtVal(raw, t.format) }; }
+    }
+    return null;
+  }
+  function getLatestMilestone(t) {
+    for (let i = MEETINGS.length-1; i >= 0; i--) { const ms = data.milestones[ky(t.id, MEETINGS[i].id)]; if (ms && ms !== "not-started") return ms; }
+    return "not-started";
+  }
+  function getLaneLatestValues(lane, mid) {
+    return lane.targets.map(t => {
+      const k=ky(t.id,mid); const isMilestone=t.format==="milestone";
+      const status=data.statuses[k]||null; const ms=data.milestones[k]||"not-started";
+      const raw=data.values[k]; const disp=fmtVal(raw,t.format);
+      const goalDisp=t.goalLabel||(t.goal!=null?fmtVal(t.goal,t.format):"—");
+      const prog=!isMilestone?getLatestProgress(t):null;
+      return {...t,status,ms,disp,goalDisp,prog,isMilestone,note:data.notes[k]||""};
+    });
+  }
+
+  const TOTAL_SLIDES = 3 + ((data.systems||[]).length > 0 ? 1 : 0) + 2;
+  useEffect(() => {
+    if (!presenting) return;
+    const handler = e => {
+      if (e.key==="ArrowRight"||e.key===" ") { e.preventDefault(); setSlideIdx(i=>Math.min(i+1,TOTAL_SLIDES-1)); }
+      if (e.key==="ArrowLeft") { e.preventDefault(); setSlideIdx(i=>Math.max(i-1,0)); }
+      if (e.key==="Escape") setPresenting(false);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [presenting, TOTAL_SLIDES]);
+
+  if (!loaded) return (
+    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:"100vh", fontFamily:"'DM Sans',sans-serif", flexDirection:"column", gap:12 }}>
+      <div style={{ fontSize:28 }}>⚙</div>
+      <div style={{ fontSize:14, color:"#888" }}>Loading tracker…</div>
+    </div>
+  );
+
+  const SS = STATUS_STYLES; const MS = MS_STYLES;
+  const TABS = [{ id:"biweekly", label:"Biweekly Mode", isNew:true }, { id:"lanes", label:"Lanes Progress" }, { id:"systems", label:"Systems Status" }];
+
+  return (
+    <div style={{ fontFamily:"'DM Sans',sans-serif", padding:"20px 16px", maxWidth:1400, margin:"0 auto", minHeight:"100vh", background:"#F7F7F8" }}>
+      <div style={{ marginBottom:20, display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:12 }}>
+        <div>
+          <h1 style={{ fontSize:20, fontWeight:700, margin:0, letterSpacing:"-0.02em", color:"#1a1a1a" }}>PROJECT SPARTAN</h1>
+          <span style={{ fontSize:12, color:"#888", fontFamily:"'DM Mono',monospace" }}>Q2 2026 · Bi-Weekly Progress Tracker</span>
+        </div>
+        <div style={{ display:"flex", gap:8, alignItems:"center", flexWrap:"wrap" }}>
+          <span style={{ fontSize:11, color: saving ? "#F4A261" : lastSaved ? "#28A745" : "#ccc", fontFamily:"'DM Mono',monospace" }}>
+            {saving ? "Saving…" : lastSaved ? `Saved ${lastSaved.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}` : "Live"}
+          </span>
+          <button onClick={() => { if (unlocked) setUnlocked(false); else { setPwInput(""); setPwError(false); setPendingAction(null); setShowPwModal(true); } }}
+            style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 14px", borderRadius:8, border:`1.5px solid ${unlocked?"#28A745":"#ddd"}`, background:unlocked?"#EAFAF0":"#FAFAFA", color:unlocked?"#155724":"#999", fontSize:12, fontWeight:600, cursor:"pointer" }}>
+            {unlocked ? "🔓 Editing — Lock" : "🔒 View Only"}
+          </button>
+          <select value={presentMeeting} onChange={e => setPresentMeeting(e.target.value)} style={{ padding:"6px 10px", borderRadius:6, border:"1.5px solid #ddd", fontSize:12, fontFamily:"'DM Mono',monospace", outline:"none", background:"#fff" }}>
+            {MEETINGS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+          </select>
+          <button onClick={() => { setSlideIdx(0); setPresenting(true); }} style={{ padding:"8px 18px", borderRadius:8, border:"none", background:"#E63946", color:"#fff", fontSize:12, fontWeight:700, cursor:"pointer" }}>▶ Present</button>
+        </div>
+      </div>
+
+      <div style={{ display:"flex", gap:0, marginBottom:20, borderBottom:"2px solid #E8E8E8" }}>
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{ padding:"10px 20px", border:"none", fontSize:13, fontWeight:600, cursor:"pointer", background:"transparent", color:tab===t.id?"#1a1a1a":"#999", borderBottom:tab===t.id?"2px solid #1a1a1a":"2px solid transparent", marginBottom:-2 }}>
+            {t.label}
+            {t.isNew && <span style={{ marginLeft:6, fontSize:9, background:"#E63946", color:"#fff", borderRadius:4, padding:"1px 5px", fontWeight:700, verticalAlign:"middle" }}>NEW</span>}
+          </button>
+        ))}
+      </div>
+
+      {tab==="biweekly" && <BiweeklyTab data={data} setData={setData} unlocked={unlocked} withAuth={withAuth} />}
+
+      {tab==="lanes" && <>
+        <p style={{ fontSize:11, color:"#aaa", margin:"-12px 0 16px" }}>{unlocked?"Click a dot to cycle status · Click a value to enter actuals · Right-click for notes":"🔒 View only — lock button to edit"}</p>
+        {LANES.map(lane => (
+          <div key={lane.name} style={{ marginBottom:16, border:"1px solid #E8E8E8", borderRadius:10, overflow:"hidden", background:"#fff" }}>
+            <div style={{ background:lane.color, padding:"9px 14px", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:4 }}>
+              <span style={{ color:"#fff", fontWeight:700, fontSize:13 }}>{lane.name}</span>
+              <div style={{ textAlign:"right" }}>
+                <span style={{ color:"rgba(255,255,255,0.9)", fontSize:11, fontWeight:600 }}>{lane.owner}</span>
+                {lane.team && <div style={{ color:"rgba(255,255,255,0.6)", fontSize:10 }}>{lane.team}</div>}
+              </div>
+            </div>
+            <div style={{ overflowX:"auto" }}>
+              <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, minWidth:900, tableLayout:"fixed" }}>
+                <colgroup><col style={{ width:"22%" }} /><col style={{ width:"8%" }} />{MEETINGS.map(m=><col key={m.id} style={{ width:`${58/MEETINGS.length}%` }} />)}<col style={{ width:"12%" }} /></colgroup>
+                <thead>
+                  <tr style={{ background:"#FAFAFA" }}>
+                    <th style={{ textAlign:"left", padding:"7px 12px", fontSize:10, color:"#999", fontWeight:600, textTransform:"uppercase", letterSpacing:"0.04em" }}>Target</th>
+                    <th style={{ textAlign:"center", padding:"7px 4px", fontSize:10, color:"#999", fontWeight:600, fontFamily:"'DM Mono',monospace" }}>Goal</th>
+                    {MEETINGS.map(m=><th key={m.id} style={{ textAlign:"center", padding:"7px 4px", fontSize:10, color:"#999", fontWeight:600, fontFamily:"'DM Mono',monospace" }}>{m.label}</th>)}
+                    <th style={{ textAlign:"center", padding:"7px 4px", fontSize:10, color:"#999", fontWeight:600, textTransform:"uppercase" }}>Progress</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lane.targets.map((t,ti) => {
+                    const isMilestone=t.format==="milestone"; const showGroup=t.group&&(ti===0||lane.targets[ti-1].group!==t.group);
+                    const goalDisp=t.goalLabel||(t.goal!=null?fmtVal(t.goal,t.format):"—"); const rows=[];
+                    if (showGroup) rows.push(<tr key={`grp-${t.group}`}><td colSpan={3+MEETINGS.length} style={{ padding:"5px 12px 2px", fontSize:10, fontWeight:700, color:"#999", textTransform:"uppercase", letterSpacing:"0.06em", background:"#FAFAFA", borderTop:ti>0?"1px solid #E8E8E8":"none" }}>{t.group}</td></tr>);
+                    rows.push(<tr key={t.id} style={{ borderTop:"1px solid #F0F0F0" }}>
+                      <td style={{ padding:"8px 12px", color:"#333", fontWeight:500, fontSize:12 }}>{t.label}</td>
+                      <td style={{ textAlign:"center", padding:"4px 3px", color:"#999", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{goalDisp}</td>
+                      {MEETINGS.map(m => {
+                        const k=ky(t.id,m.id); const hasNote=!!data.notes[k];
+                        if (isMilestone) { const ms=MS[data.milestones[k]||"not-started"]; return <td key={m.id} style={{ textAlign:"center", padding:"4px 3px", background:ms.cellBg }} onContextMenu={e=>{e.preventDefault();withAuth(()=>{setNoteCell(k);setNoteText(data.notes[k]||"");});}}><button onClick={()=>withAuth(()=>cycleMilestone(t.id,m.id))} style={{ padding:"4px 8px", borderRadius:12, border:"none", fontSize:10, fontWeight:600, background:ms.bg, color:ms.text, cursor:unlocked?"pointer":"default", width:"100%", minWidth:60, position:"relative" }}>{ms.label}{hasNote&&<span style={{ position:"absolute", top:1, right:3, fontSize:7, color:"#457B9D" }}>●</span>}</button></td>; }
+                        const s=SS[data.statuses[k]||null]; const raw=data.values[k]; const disp=fmtVal(raw,t.format);
+                        return <td key={m.id} style={{ padding:"4px 3px", background:s.cellBg, position:"relative" }} onContextMenu={e=>{e.preventDefault();withAuth(()=>{setNoteCell(k);setNoteText(data.notes[k]||"");});}}>
+                          <div style={{ display:"flex", alignItems:"center", gap:4, justifyContent:"center" }}>
+                            <span onClick={()=>withAuth(()=>cycleStatus(t.id,m.id))} style={{ width:10, height:10, minWidth:10, borderRadius:"50%", background:s.dot, cursor:unlocked?"pointer":"default", border:"1.5px solid rgba(0,0,0,0.08)" }} />
+                            {editCell===k?<input autoFocus value={editVal} onChange={e=>setEditVal(e.target.value)} onBlur={commitVal} onKeyDown={e=>e.key==="Enter"&&commitVal()} style={{ width:56, padding:"2px 4px", border:"1.5px solid #457B9D", borderRadius:4, fontSize:11, textAlign:"center", fontFamily:"'DM Mono',monospace", outline:"none" }} />
+                              :<span onClick={()=>withAuth(()=>{setEditCell(k);setEditVal(raw||"");})} style={{ fontSize:11, fontFamily:"'DM Mono',monospace", fontWeight:600, color:disp?"#1a1a1a":"#ccc", cursor:unlocked?"pointer":"default", minWidth:40, textAlign:"center" }}>{disp||"–"}</span>}
+                          </div>
+                          {hasNote&&<span style={{ position:"absolute", top:2, right:3, fontSize:7, color:"#457B9D" }}>●</span>}
+                        </td>;
+                      })}
+                      {(() => {
+                        if (isMilestone) { const lMs=getLatestMilestone(t); const msPct=lMs==="done"?100:lMs==="in-progress"?50:0; const bc=msPct===100?"#28A745":msPct===50?"#3B82F6":"#EBEBEB"; return <td style={{ padding:"4px 8px" }}><div style={{ display:"flex", alignItems:"center", gap:6 }}><div style={{ flex:1, height:7, background:"#EBEBEB", borderRadius:4, overflow:"hidden" }}><div style={{ width:`${msPct}%`, height:"100%", borderRadius:4, background:bc }} /></div><span style={{ fontSize:10, fontWeight:600, color:msPct>0?"#666":"#ccc", fontFamily:"'DM Mono',monospace", minWidth:30 }}>{msPct}%</span></div></td>; }
+                        const prog=getLatestProgress(t); if (!prog) return <td style={{ padding:"4px 8px" }}><span style={{ fontSize:10, color:"#ddd" }}>—</span></td>;
+                        const bc=prog.pct>=90?"#28A745":prog.pct>=60?"#FFC107":"#DC3545";
+                        return <td style={{ padding:"4px 8px" }}><div style={{ display:"flex", alignItems:"center", gap:6 }}><div style={{ flex:1, height:7, background:"#EBEBEB", borderRadius:4, overflow:"hidden" }}><div style={{ width:`${Math.min(prog.pct,100)}%`, height:"100%", borderRadius:4, background:bc }} /></div><span style={{ fontSize:10, fontWeight:600, color:"#666", fontFamily:"'DM Mono',monospace", minWidth:30 }}>{prog.pct}%</span></div></td>;
+                      })()}
+                    </tr>);
+                    return rows;
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        ))}
+      </>}
+
+      {tab==="systems" && <>
+        <p style={{ fontSize:11, color:"#aaa", margin:"0 0 16px" }}>{unlocked?"Click cells to cycle status. Right-click for notes.":"🔒 View only"}</p>
+        <div style={{ display:"flex", gap:8, marginBottom:20, alignItems:"center" }}>
+          <input value={newSystemName} onChange={e=>setNewSystemName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&withAuth(()=>{if(!newSystemName.trim())return;const id="sys_"+Date.now();setData(d=>({...d,systems:[...(d.systems||[]),{id,name:newSystemName.trim()}]}));setNewSystemName("");})} placeholder={unlocked?"Add a system…":"🔒 Unlock to add"} disabled={!unlocked} style={{ padding:"8px 14px", border:"1.5px solid #ddd", borderRadius:8, fontSize:13, outline:"none", width:280, background:unlocked?"#fff":"#FAFAFA", color:unlocked?"#1a1a1a":"#bbb" }} />
+          <button onClick={()=>withAuth(()=>{if(!newSystemName.trim())return;const id="sys_"+Date.now();setData(d=>({...d,systems:[...(d.systems||[]),{id,name:newSystemName.trim()}]}));setNewSystemName("");})} style={{ padding:"8px 18px", borderRadius:8, border:"none", background:unlocked?"#1a1a1a":"#E0E0E0", color:unlocked?"#fff":"#aaa", fontSize:12, fontWeight:600, cursor:"pointer" }}>Add</button>
+        </div>
+        {(data.systems||[]).length===0?(<div style={{ padding:"60px 20px", textAlign:"center", border:"2px dashed #E0E0E0", borderRadius:12, color:"#bbb", background:"#fff" }}><div style={{ fontSize:14, fontWeight:600, color:"#999", marginBottom:4 }}>No systems added yet</div></div>):(
+          <div style={{ overflowX:"auto" }}>
+            <table style={{ width:"100%", borderCollapse:"collapse", fontSize:12, minWidth:900, tableLayout:"fixed", border:"1px solid #E8E8E8", borderRadius:10, background:"#fff" }}>
+              <colgroup><col style={{ width:"22%" }} />{MEETINGS.map(m=><col key={m.id} style={{ width:`${68/MEETINGS.length}%` }} />)}<col style={{ width:"10%" }} /></colgroup>
+              <thead><tr style={{ background:"#2D2D2D" }}><th style={{ textAlign:"left", padding:"9px 14px", fontSize:10, color:"#fff", fontWeight:600, textTransform:"uppercase" }}>System</th>{MEETINGS.map(m=><th key={m.id} style={{ textAlign:"center", padding:"9px 4px", fontSize:10, color:"#fff", fontWeight:600, fontFamily:"'DM Mono',monospace" }}>{m.label}</th>)}<th /></tr></thead>
+              <tbody>{(data.systems||[]).map((sys,si)=>{ const k2=`${sys.id}`;
+                return <tr key={sys.id} style={{ borderTop:si>0?"1px solid #F0F0F0":"none" }}>
+                  <td style={{ padding:"9px 14px", color:"#333", fontWeight:500, fontSize:13 }}>{sys.name}</td>
+                  {MEETINGS.map(m=>{ const k=ky(sys.id,m.id); const s=SS[data.statuses[k]||null]; const hasNote=!!data.notes[k]; return <td key={m.id} style={{ textAlign:"center", padding:"4px 3px", background:s.cellBg }} onContextMenu={e=>{e.preventDefault();withAuth(()=>{setNoteCell(k);setNoteText(data.notes[k]||"");});}}><button onClick={()=>withAuth(()=>{const cur=data.statuses[k]||null;const next=STATUS_CYCLE[(STATUS_CYCLE.indexOf(cur)+1)%STATUS_CYCLE.length];setData(d=>({...d,statuses:{...d.statuses,[k]:next}}));})} style={{ padding:"5px 10px", borderRadius:20, border:"none", fontSize:11, fontWeight:600, background:s.bg==="transparent"?"#F0F0F0":s.bg, color:s.text, cursor:unlocked?"pointer":"default", minWidth:72, position:"relative" }}><span style={{ display:"inline-block", width:7, height:7, borderRadius:"50%", background:s.dot, marginRight:5, verticalAlign:"middle" }} />{s.label}{hasNote&&<span style={{ position:"absolute", top:1, right:3, fontSize:7, color:"#457B9D" }}>●</span>}</button></td>; })}
+                  <td style={{ textAlign:"center", padding:"4px 8px" }}><button onClick={()=>withAuth(()=>setData(d=>({...d,systems:(d.systems||[]).filter(s=>s.id!==sys.id)})))} style={{ background:"none", border:"none", cursor:unlocked?"pointer":"default", fontSize:12, color:"#ddd", padding:4 }}>✕</button></td>
+                </tr>; })}</tbody>
+            </table>
+          </div>
+        )}
+      </>}
+
+      {presenting && (() => {
+        const mid=presentMeeting; const ml=MEETINGS.find(m=>m.id===mid)?.label||mid;
+        const pS={position:"fixed",inset:0,zIndex:200,fontFamily:"'DM Sans',sans-serif",display:"flex",flexDirection:"column",overflow:"hidden"};
+        const footer=(<div style={{ padding:"10px 32px", background:"#2D2D2D", display:"flex", justifyContent:"space-between", alignItems:"center", flexShrink:0 }}><span style={{ fontSize:11, color:"#888", fontFamily:"'DM Mono',monospace" }}>Project Spartan · Q2 2026</span><div style={{ display:"flex", gap:8, alignItems:"center" }}><span style={{ fontSize:11, color:"#666" }}>{slideIdx+1}/{TOTAL_SLIDES}</span><button onClick={()=>setSlideIdx(i=>Math.max(i-1,0))} style={{ background:"none", border:"1px solid #555", borderRadius:4, color:"#aaa", cursor:"pointer", padding:"2px 8px", fontSize:12 }}>←</button><button onClick={()=>setSlideIdx(i=>Math.min(i+1,TOTAL_SLIDES-1))} style={{ background:"none", border:"1px solid #555", borderRadius:4, color:"#aaa", cursor:"pointer", padding:"2px 8px", fontSize:12 }}>→</button><button onClick={()=>setPresenting(false)} style={{ background:"#E63946", border:"none", borderRadius:4, color:"#fff", cursor:"pointer", padding:"3px 10px", fontSize:11, fontWeight:600 }}>Exit</button></div></div>);
+        const slides=[];
+        slides.push(<div key="title" style={{...pS}}><div style={{ flex:1, background:"#1A1A1A", display:"flex", flexDirection:"column", justifyContent:"center", padding:"0 60px", position:"relative" }}><div style={{ position:"absolute", top:0, left:0, right:0, height:4, background:"#E63946" }} /><h1 style={{ fontSize:52, fontWeight:700, color:"#fff", margin:0, letterSpacing:"-0.02em", fontFamily:"Georgia,serif" }}>PROJECT SPARTAN</h1><p style={{ fontSize:22, color:"#888", margin:"12px 0 0" }}>Bi-Weekly Directors Meeting</p><p style={{ fontSize:20, color:"#E63946", fontWeight:700, margin:"20px 0 0" }}>{ml} 2026</p><div style={{ display:"flex", gap:10, marginTop:40 }}>{LANES.map(l=><span key={l.name} style={{ width:16, height:16, borderRadius:"50%", background:l.color }} />)}</div></div>{footer}</div>);
+        slides.push(<div key="agenda" style={{...pS}}><div style={{ flex:1, background:"#F7F7F8", padding:"40px 60px", overflow:"auto", position:"relative" }}><div style={{ position:"absolute", top:0, left:0, right:0, height:4, background:"#E63946" }} /><h2 style={{ fontSize:36, fontWeight:700, margin:"0 0 30px", fontFamily:"Georgia,serif", color:"#1a1a1a" }}>AGENDA</h2>{[{n:"01",t:"Lane Updates",d:"Status, actuals vs goals, blockers"},{n:"02",t:"Systems Health",d:"On Track / At Risk / Off Track"},{n:"03",t:"Cross-Lane Issues",d:"Handoffs, conflicts, escalations"},{n:"04",t:"Decisions & Actions",d:"What needs to be resolved today"}].map(a=>(<div key={a.n} style={{ display:"flex", alignItems:"center", gap:20, padding:"16px 20px", background:"#fff", borderRadius:8, marginBottom:12, borderLeft:"4px solid #E63946", boxShadow:"0 2px 8px rgba(0,0,0,0.05)" }}><span style={{ fontSize:28, fontWeight:700, color:"#E63946", fontFamily:"Georgia,serif", minWidth:45 }}>{a.n}</span><div><div style={{ fontSize:18, fontWeight:700, color:"#1a1a1a" }}>{a.t}</div><div style={{ fontSize:13, color:"#888" }}>{a.d}</div></div></div>))}</div>{footer}</div>);
+        const OverviewSlide=()=>{const[openLanes,setOpenLanes]=useState({});return <div style={{...pS}}><div style={{ flex:1, background:"#F7F7F8", display:"flex", flexDirection:"column", overflow:"hidden" }}><div style={{ width:"100%", height:4, background:"#E63946", flexShrink:0 }} /><div style={{ background:"#2D2D2D", padding:"16px 60px", flexShrink:0 }}><h2 style={{ fontSize:26, fontWeight:700, color:"#fff", margin:0, fontFamily:"Georgia,serif" }}>LANES OVERVIEW — {ml}</h2></div><div style={{ flex:1, overflowY:"auto", padding:"20px 60px" }}>{LANES.map(lane=>{const targets=getLaneLatestValues(lane,mid);const onC=targets.filter(t=>t.status==="on-track").length;const atC=targets.filter(t=>t.status==="at-risk").length;const offC=targets.filter(t=>t.status==="off-track").length;const isOpen=!!openLanes[lane.name];return <div key={lane.name} style={{ marginBottom:10, border:"1px solid #E8E8E8", borderRadius:8, overflow:"hidden" }}><div onClick={()=>setOpenLanes(p=>({...p,[lane.name]:!p[lane.name]}))} style={{ display:"flex", alignItems:"center", gap:16, padding:"13px 20px", background:"#fff", borderLeft:`4px solid ${lane.color}`, cursor:"pointer", userSelect:"none" }}><span style={{ fontSize:14, fontWeight:700, color:isOpen?lane.color:"#1a1a1a", flex:1 }}>{lane.name}</span><span style={{ fontSize:12, color:"#999", marginRight:12 }}>{lane.owner}</span><div style={{ display:"flex", gap:6 }}>{onC>0&&<span style={{ padding:"3px 10px", borderRadius:10, background:"#D4EDDA", color:"#155724", fontSize:11, fontWeight:600 }}>{onC} On Track</span>}{atC>0&&<span style={{ padding:"3px 10px", borderRadius:10, background:"#FFF3CD", color:"#856404", fontSize:11, fontWeight:600 }}>{atC} At Risk</span>}{offC>0&&<span style={{ padding:"3px 10px", borderRadius:10, background:"#F8D7DA", color:"#721C24", fontSize:11, fontWeight:600 }}>{offC} Off Track</span>}{onC===0&&atC===0&&offC===0&&<span style={{ fontSize:11, color:"#ccc" }}>No status</span>}</div><span style={{ fontSize:14, color:"#aaa", marginLeft:8, transform:isOpen?"rotate(180deg)":"none", transition:"transform 0.2s", display:"inline-block" }}>▼</span></div>{isOpen&&<table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}><thead><tr style={{ background:"#2D2D2D" }}>{["Target","Goal","Actual","Status","Progress"].map((h,hi)=><th key={h} style={{ padding:"8px 14px", color:"#fff", fontWeight:600, fontSize:10, textTransform:"uppercase", letterSpacing:"0.05em", textAlign:hi===0?"left":"center", width:["30%","13%","13%","18%","26%"][hi] }}>{h}</th>)}</tr></thead><tbody>{(()=>{let prevGroup=null;const rows=[];targets.forEach(t=>{if(t.group&&t.group!==prevGroup){rows.push(<tr key={`g-${t.group}`}><td colSpan={5} style={{ padding:"6px 14px 2px", fontSize:10, fontWeight:700, color:"#999", textTransform:"uppercase", letterSpacing:"0.06em", background:"#FAFAFA", borderTop:prevGroup?"1px solid #E8E8E8":"none" }}>{t.group}</td></tr>);prevGroup=t.group;}const sStyle=SS[t.status||null]||SS[null];const mStyle=MS[t.ms]||MS["not-started"];rows.push(<tr key={t.id} style={{ borderTop:"1px solid #F0F0F0", background:t.isMilestone?mStyle.cellBg:sStyle.cellBg }}><td style={{ padding:"9px 14px", fontWeight:500, color:"#333" }}>{t.label}</td><td style={{ textAlign:"center", padding:"7px 8px", color:"#999", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{t.goalDisp}</td><td style={{ textAlign:"center", padding:"7px 8px", fontFamily:"'DM Mono',monospace", fontWeight:600, fontSize:13, color:t.disp?"#1a1a1a":"#ccc" }}>{t.disp||"—"}</td><td style={{ textAlign:"center", padding:"7px 8px" }}>{t.isMilestone?<span style={{ padding:"3px 10px", borderRadius:10, background:mStyle.bg, color:mStyle.text, fontSize:11, fontWeight:600 }}>{mStyle.label}</span>:<span style={{ padding:"3px 10px", borderRadius:10, background:sStyle.bg==="transparent"?"#F0F0F0":sStyle.bg, color:sStyle.text, fontSize:11, fontWeight:600 }}><span style={{ display:"inline-block", width:6, height:6, borderRadius:"50%", background:sStyle.dot, marginRight:4, verticalAlign:"middle" }} />{sStyle.label}</span>}</td><td style={{ padding:"7px 14px" }}>{t.isMilestone?(()=>{const msPct=t.ms==="done"?100:t.ms==="in-progress"?50:0;return <div style={{ display:"flex", alignItems:"center", gap:8 }}><div style={{ flex:1, height:7, background:"#EBEBEB", borderRadius:4, overflow:"hidden" }}><div style={{ width:`${msPct}%`, height:"100%", borderRadius:4, background:msPct===100?"#28A745":msPct===50?"#3B82F6":"#EBEBEB" }} /></div><span style={{ fontSize:11, fontWeight:600, color:msPct>0?"#666":"#ccc", fontFamily:"'DM Mono',monospace" }}>{msPct}%</span></div>;})():t.prog?<div style={{ display:"flex", alignItems:"center", gap:8 }}><div style={{ flex:1, height:7, background:"#EBEBEB", borderRadius:4, overflow:"hidden" }}><div style={{ width:`${Math.min(t.prog.pct,100)}%`, height:"100%", borderRadius:4, background:t.prog.pct>=90?"#28A745":t.prog.pct>=60?"#FFC107":"#DC3545" }} /></div><span style={{ fontSize:11, fontWeight:600, color:"#666", fontFamily:"'DM Mono',monospace" }}>{t.prog.pct}%</span></div>:<span style={{ fontSize:11, color:"#ddd" }}>—</span>}</td></tr>);});return rows;})()}</tbody></table>}</div>;})}</div></div>{footer}</div>;};
+        slides.push(<OverviewSlide key="overview" />);
+        if((data.systems||[]).length>0)slides.push(<div key="systems" style={{...pS}}><div style={{ flex:1, background:"#F7F7F8", display:"flex", flexDirection:"column", overflow:"auto" }}><div style={{ width:"100%", height:4, background:"#E63946", flexShrink:0 }} /><div style={{ background:"#2D2D2D", padding:"16px 60px", flexShrink:0 }}><h2 style={{ fontSize:26, fontWeight:700, color:"#fff", margin:0, fontFamily:"Georgia,serif" }}>SYSTEMS STATUS — {ml}</h2></div><div style={{ padding:"20px 60px", flex:1 }}><table style={{ width:"100%", borderCollapse:"collapse", fontSize:14 }}><thead><tr style={{ background:"#2D2D2D" }}>{["System","Status","Notes"].map((h,hi)=><th key={h} style={{ padding:"10px 14px", color:"#fff", fontWeight:600, fontSize:11, textTransform:"uppercase", textAlign:hi===0?"left":"center", width:["40%","30%","30%"][hi] }}>{h}</th>)}</tr></thead><tbody>{(data.systems||[]).map((sys,si)=>{const k=ky(sys.id,mid);const s=SS[data.statuses[k]||null];const note=data.notes[k]||"";return <tr key={sys.id} style={{ borderTop:si>0?"1px solid #F0F0F0":"none", background:s.cellBg }}><td style={{ padding:"10px 14px", fontWeight:500, color:"#333" }}>{sys.name}</td><td style={{ textAlign:"center", padding:"8px" }}><span style={{ padding:"4px 14px", borderRadius:12, background:s.bg==="transparent"?"#F0F0F0":s.bg, color:s.text, fontSize:12, fontWeight:600 }}><span style={{ display:"inline-block", width:7, height:7, borderRadius:"50%", background:s.dot, marginRight:5, verticalAlign:"middle" }} />{s.label}</span></td><td style={{ padding:"10px 14px", color:"#666", fontSize:13 }}>{note}</td></tr>;})} </tbody></table></div></div>{footer}</div>);
+        const CrossLaneSlide=()=>{const fields=[{key:"handoffs",label:"Handoffs & Conflicts",color:"#457B9D",placeholder:"e.g. Lead routing overlap between Lane 1 and Lane 2…"},{key:"decisions",label:"Decisions Needed",color:"#E63946",placeholder:"e.g. Approve budget increase for Lane 3…"},{key:"actions",label:"Action Items",color:"#28A745",placeholder:"e.g. Daisy to update HubSpot by 21 Apr…"}];return <div style={{...pS}}><div style={{ flex:1, background:"#F7F7F8", display:"flex", flexDirection:"column", overflow:"hidden" }}><div style={{ width:"100%", height:4, background:"#E63946", flexShrink:0 }} /><div style={{ background:"#2D2D2D", padding:"16px 60px", flexShrink:0, display:"flex", justifyContent:"space-between", alignItems:"center" }}><h2 style={{ fontSize:26, fontWeight:700, color:"#fff", margin:0, fontFamily:"Georgia,serif" }}>CROSS-LANE ISSUES & DECISIONS</h2>{!unlocked&&<button onClick={()=>{setPwInput("");setPwError(false);setPendingAction(null);setShowPwModal(true);}} style={{ padding:"6px 14px", borderRadius:8, border:"1.5px solid rgba(255,255,255,0.2)", background:"rgba(255,255,255,0.08)", color:"rgba(255,255,255,0.7)", fontSize:12, fontWeight:600, cursor:"pointer" }}>🔒 Unlock to Edit</button>}{unlocked&&<span style={{ fontSize:12, color:"#28A745", fontWeight:600 }}>🔓 Editing enabled</span>}</div><div style={{ flex:1, overflowY:"auto", padding:"20px 60px", display:"flex", flexDirection:"column", gap:16 }}>{fields.map(({key,label,color,placeholder})=>{const val=data.crosslane?.[key]||"";return <div key={key} style={{ background:"#fff", borderRadius:10, borderLeft:`4px solid ${color}`, overflow:"hidden", flex:1, display:"flex", flexDirection:"column" }}><div style={{ padding:"12px 20px 0", display:"flex", alignItems:"center", gap:8 }}><span style={{ width:8, height:8, borderRadius:"50%", background:color, flexShrink:0 }} /><h3 style={{ margin:0, fontSize:14, fontWeight:700, color:"#1a1a1a" }}>{label}</h3></div>{unlocked?<textarea value={val} onChange={e=>setData(d=>({...d,crosslane:{...(d.crosslane||{}),[key]:e.target.value}}))} placeholder={placeholder} style={{ flex:1, minHeight:80, resize:"none", border:"none", outline:"none", padding:"10px 20px 14px", fontSize:13, color:"#333", background:"transparent", lineHeight:1.6 }} />:<div onClick={()=>{setPwInput("");setPwError(false);setPendingAction(null);setShowPwModal(true);}} style={{ flex:1, minHeight:80, padding:"10px 20px 14px", fontSize:13, color:val?"#333":"#bbb", lineHeight:1.6, cursor:"pointer", fontStyle:val?"normal":"italic" }}>{val||placeholder}</div>}</div>;})}</div></div>{footer}</div>;};
+        slides.push(<CrossLaneSlide key="crosslane" />);
+        slides.push(<div key="closing" style={{...pS}}><div style={{ flex:1, background:"#1A1A1A", display:"flex", flexDirection:"column", justifyContent:"center", padding:"0 60px", position:"relative" }}><div style={{ position:"absolute", top:0, left:0, right:0, height:4, background:"#E63946" }} /><h2 style={{ fontSize:38, fontWeight:700, color:"#fff", margin:0, fontFamily:"Georgia,serif" }}>Next Meeting</h2>{(()=>{const ci=MEETINGS.findIndex(m=>m.id===mid);const next=ci<MEETINGS.length-1?MEETINGS[ci+1]:null;return <p style={{ fontSize:22, color:"#E63946", fontWeight:700, margin:"16px 0 0" }}>{next?next.label:"End of Q2 — Day 90 Review"}</p>;})()}<p style={{ fontSize:16, color:"#888", margin:"24px 0 0" }}>Directors to update actuals in the tracker before the next meeting.</p><div style={{ display:"flex", gap:10, marginTop:40 }}>{LANES.map(l=><span key={l.name} style={{ width:16, height:16, borderRadius:"50%", background:l.color }} />)}</div></div>{footer}</div>);
+        return slides[Math.min(slideIdx,slides.length-1)];
+      })()}
+
+      {showPwModal&&(<div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300 }} onClick={()=>{setShowPwModal(false);setPendingAction(null);}}><div style={{ background:"#fff", borderRadius:14, padding:"32px 36px", width:380, boxShadow:"0 24px 64px rgba(0,0,0,0.2)" }} onClick={e=>e.stopPropagation()}><div style={{ fontSize:28, textAlign:"center", marginBottom:8 }}>🔐</div><h3 style={{ margin:"0 0 6px", fontSize:16, fontWeight:700, textAlign:"center", color:"#1a1a1a" }}>Directors Only</h3><p style={{ margin:"0 0 20px", fontSize:13, color:"#888", textAlign:"center" }}>Enter your password to enable editing.</p><input type="password" autoFocus value={pwInput} onChange={e=>{setPwInput(e.target.value);setPwError(false);}} onKeyDown={e=>e.key==="Enter"&&submitPassword()} placeholder="Password" style={{ width:"100%", padding:"10px 14px", border:`1.5px solid ${pwError?"#DC3545":"#ddd"}`, borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box", marginBottom:6 }} />{pwError&&<p style={{ margin:"0 0 10px", fontSize:12, color:"#DC3545", textAlign:"center" }}>Incorrect password. Try again.</p>}<button onClick={submitPassword} style={{ width:"100%", marginTop:10, padding:"10px", borderRadius:8, border:"none", background:"#1a1a1a", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>Unlock</button><button onClick={()=>{setShowPwModal(false);setPendingAction(null);}} style={{ width:"100%", marginTop:8, padding:"8px", borderRadius:8, border:"1.5px solid #E8E8E8", background:"transparent", color:"#999", fontSize:13, cursor:"pointer" }}>Cancel</button></div></div>)}
+      {noteCell&&(<div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:100 }} onClick={commitNote}><div style={{ background:"#fff", borderRadius:12, padding:24, width:360, boxShadow:"0 20px 60px rgba(0,0,0,0.15)" }} onClick={e=>e.stopPropagation()}><h3 style={{ margin:"0 0 12px", fontSize:14, fontWeight:600 }}>Note</h3><textarea value={noteText} onChange={e=>setNoteText(e.target.value)} rows={4} autoFocus style={{ width:"100%", border:"1.5px solid #ddd", borderRadius:8, padding:10, fontSize:13, resize:"vertical", boxSizing:"border-box" }} placeholder="Add context…" /><div style={{ display:"flex", justifyContent:"flex-end", marginTop:12 }}><button onClick={commitNote} style={{ padding:"6px 16px", borderRadius:6, border:"none", background:"#1a1a1a", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>Save</button></div></div></div>)}
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
