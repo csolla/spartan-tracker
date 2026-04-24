@@ -434,6 +434,11 @@ function BrendonTab({ data, setData, onLock }) {
   function updateLaneNote(li, val) {
     setData(d => ({ ...d, brendon_notes: { ...(d.brendon_notes || {}), [`${meetingId}::${li}`]: val } }));
   }
+  const general = data.brendon_notes?.[`${meetingId}::general`] || "";
+  const prevGeneral = prevMeeting ? (data.brendon_notes?.[`${prevMeeting.id}::general`] || "") : "";
+  function updateGeneral(val) {
+    setData(d => ({ ...d, brendon_notes: { ...(d.brendon_notes || {}), [`${meetingId}::general`]: val } }));
+  }
 
   function getSysMsStatus(sysId, msId) {
     const k = `${sysId}::${msId}::${meetingId}`;
@@ -549,6 +554,25 @@ function BrendonTab({ data, setData, onLock }) {
           </div>
         );
       })}
+
+      {/* General comments — cross-lane */}
+      <div style={{ marginTop: 8, marginBottom: 32, border: "1px solid #E8E8E8", borderRadius: 12, overflow: "hidden", background: "#fff" }}>
+        <div style={{ background: "#1A1A1A", padding: "13px 18px" }}>
+          <div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>General comments</div>
+          <div style={{ color: "rgba(255,255,255,0.65)", fontSize: 11, marginTop: 2 }}>Cross-lane observations, themes, synthesis — anything that doesn't belong to a single lane</div>
+        </div>
+        <div style={{ padding: "20px" }}>
+          {prevGeneral && (
+            <div style={{ padding: "10px 14px", background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 8, marginBottom: 10 }}>
+              <div style={{ fontSize: 9, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>⏮ From {prevMeeting?.label}</div>
+              <div style={{ fontSize: 12, color: "#666", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{prevGeneral}</div>
+            </div>
+          )}
+          <textarea value={general} onChange={e => updateGeneral(e.target.value)} rows={7}
+            placeholder="Cross-lane themes, patterns you're noticing, things to raise with Brendon that span multiple lanes, your own reflections on how the whole Spartan rhythm is going."
+            style={{ width: "100%", border: `1.5px solid ${general ? "#1A1A1A" : "#E8E8E8"}`, borderRadius: 8, padding: "11px 13px", fontSize: 12, resize: "vertical", outline: "none", background: general ? "#FAFAFA" : "#fff", boxSizing: "border-box", lineHeight: 1.7, color: "#333" }} />
+        </div>
+      </div>
     </div>
   );
 }
