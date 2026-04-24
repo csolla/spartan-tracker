@@ -25,6 +25,7 @@ const SUPABASE_KEY = "sb_publishable_JFQ0fCmfC_AVm8yPtbLSjw_dmCAXy_-";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const STORAGE_KEY = "spartan-tracker-v4";
 const PASSWORD = "spartanprogresstracker";
+const BRENDON_PASSWORD = "brendonprivate"; // ← change this to whatever you'd like for your 1:1 tab
 const POLL_INTERVAL = 30000;
 
 async function dbGet(key) {
@@ -141,7 +142,7 @@ const PRESET_SYSTEMS = {
   ],
 };
 
-const DEFAULT_DATA = { statuses: {}, values: {}, notes: {}, milestones: {}, systems: [], crosslane: {}, lane_systems: {}, sys_ms_status: {}, biweekly: {} };
+const DEFAULT_DATA = { statuses: {}, values: {}, notes: {}, milestones: {}, systems: [], crosslane: {}, lane_systems: {}, sys_ms_status: {}, biweekly: {}, brendon_notes: {} };
 
 function fmtVal(val, format) {
   if (val === "" || val == null) return "";
@@ -421,6 +422,137 @@ function BiweeklyTab({ data, setData, unlocked, withAuth }) {
   );
 }
 
+function BrendonTab({ data, setData, onLock }) {
+  const [meetingId, setMeetingId] = useState("m1");
+  const [openLanes, setOpenLanes] = useState({ 0: true, 1: true, 2: true, 3: true, 4: true });
+  const ky = (tid, mid) => `${tid}::${mid}`;
+  const mIdx = MEETINGS.findIndex(m => m.id === meetingId);
+  const prevMeeting = mIdx > 0 ? MEETINGS[mIdx - 1] : null;
+
+  function getLaneNote(li) { return data.brendon_notes?.[`${meetingId}::${li}`] || ""; }
+  function getPrevLaneNote(li) { return prevMeeting ? (data.brendon_notes?.[`${prevMeeting.id}::${li}`] || "") : ""; }
+  function updateLaneNote(li, val) {
+    setData(d => ({ ...d, brendon_notes: { ...(d.brendon_notes || {}), [`${meetingId}::${li}`]: val } }));
+  }
+
+  function getSysMsStatus(sysId, msId) {
+    const k = `${sysId}::${msId}::${meetingId}`;
+    if (data.sys_ms_status?.[k] !== undefined) return data.sys_ms_status[k];
+    for (let i = mIdx - 1; i >= 0; i--) {
+      const pk = `${sysId}::${msId}::${MEETINGS[i].id}`;
+      if (data.sys_ms_status?.[pk] !== undefined) return data.sys_ms_status[pk];
+    }
+    return "not-started";
+  }
+  function getSysProgress(sys) {
+    if (!sys.milestones.length) return 0;
+    return Math.round(sys.milestones.filter(m => getSysMsStatus(sys.id, m.id) === "done").length / sys.milestones.length * 100);
+  }
+  function getLaneSystems(li) {
+    return (data.lane_systems?.[li]?.length > 0) ? data.lane_systems[li] : (PRESET_SYSTEMS[li] || []);
+  }
+
+  const subLabel = { fontSize: 10, fontWeight: 700, color: "#999", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 12, paddingBottom: 6, borderBottom: "1px solid #F0F0F0" };
+
+  return (
+    <div>
+      {/* Private banner */}
+      <div style={{ padding: "12px 18px", background: "#1A1A1A", color: "#fff", borderRadius: 10, marginBottom: 22, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <span style={{ fontSize: 16 }}>🔐</span>
+          <div>
+            <div style={{ fontSize: 12, fontWeight: 700 }}>Private — Carlota & Brendon only</div>
+            <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>Prep and notes for 1:1 meetings · directors do not have access to this tab</div>
+          </div>
+        </div>
+        <button onClick={onLock} style={{ padding: "6px 14px", borderRadius: 8, border: "1.5px solid rgba(255,255,255,0.2)", background: "rgba(255,255,255,0.08)", color: "rgba(255,255,255,0.85)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>Lock tab</button>
+      </div>
+
+      {/* Meeting selector */}
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ fontSize: 10, color: "#aaa", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Meeting date</div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {MEETINGS.map(m => (
+            <button key={m.id} onClick={() => setMeetingId(m.id)}
+              style={{ padding: "5px 14px", borderRadius: 20, border: `1.5px solid ${meetingId === m.id ? "#1a1a1a" : "#ddd"}`, background: meetingId === m.id ? "#1a1a1a" : "transparent", color: meetingId === m.id ? "#fff" : "#666", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "'DM Mono',monospace" }}>
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Lane-by-lane cards */}
+      {LANES.map((lane, li) => {
+        const isOpen = openLanes[li] !== false;
+        const systems = getLaneSystems(li);
+        const note = getLaneNote(li);
+        const prevNote = getPrevLaneNote(li);
+        return (
+          <div key={li} style={{ marginBottom: 16, border: "1px solid #E8E8E8", borderRadius: 12, overflow: "hidden", background: "#fff" }}>
+            {/* Lane header */}
+            <div onClick={() => setOpenLanes(p => ({ ...p, [li]: !isOpen }))}
+              style={{ background: lane.color, padding: "13px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", cursor: "pointer", userSelect: "none" }}>
+              <div>
+                <div style={{ color: "#fff", fontWeight: 700, fontSize: 14 }}>{lane.name}</div>
+                <div style={{ color: "rgba(255,255,255,0.75)", fontSize: 11, marginTop: 2 }}>{lane.owner} · {lane.team}</div>
+              </div>
+              <span style={{ color: "rgba(255,255,255,0.85)", fontSize: 13, transform: isOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s", display: "inline-block" }}>▼</span>
+            </div>
+
+            {isOpen && (
+              <div style={{ padding: "20px 20px 22px" }}>
+                {/* Target review */}
+                <div style={{ marginBottom: 24 }}>
+                  <div style={subLabel}>Target review</div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+                    {lane.targets.map(t => <ValueCard key={t.id} t={t} k={ky(t.id, meetingId)} data={data} setData={setData} unlocked={false} withAuth={() => {}} laneColor={lane.color} />)}
+                  </div>
+                </div>
+
+                {/* Systems check */}
+                <div style={{ marginBottom: 24 }}>
+                  <div style={subLabel}>Systems check</div>
+                  {systems.length === 0 ? (
+                    <div style={{ fontSize: 12, color: "#bbb", fontStyle: "italic", padding: "6px 0" }}>No systems defined for this lane yet.</div>
+                  ) : systems.map((sys, si) => {
+                    const prog = getSysProgress(sys);
+                    const doneCount = sys.milestones.filter(m => getSysMsStatus(sys.id, m.id) === "done").length;
+                    return (
+                      <div key={sys.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 0", borderTop: si > 0 ? "1px solid #F4F4F4" : "none" }}>
+                        <span style={{ fontSize: 12, flexShrink: 0 }}>⚙</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "#333", flex: 1 }}>{sys.name}</span>
+                        {sys.milestones.length > 0 && <span style={{ fontSize: 10, color: "#aaa", fontFamily: "'DM Mono',monospace" }}>{doneCount}/{sys.milestones.length}</span>}
+                        <div style={{ width: 80, height: 5, background: "#E8E8E8", borderRadius: 3, overflow: "hidden" }}>
+                          <div style={{ width: `${prog}%`, height: "100%", borderRadius: 3, background: prog === 100 ? "#28A745" : lane.color, transition: "width 0.4s" }} />
+                        </div>
+                        <span style={{ fontSize: 10, color: "#888", fontFamily: "'DM Mono',monospace", minWidth: 28 }}>{prog}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Comments */}
+                <div>
+                  <div style={subLabel}>Comments</div>
+                  {prevNote && (
+                    <div style={{ padding: "10px 14px", background: "#FFFBEB", border: "1.5px solid #FDE68A", borderRadius: 8, marginBottom: 10 }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: "#B45309", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>⏮ From {prevMeeting?.label}</div>
+                      <div style={{ fontSize: 12, color: "#666", lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{prevNote}</div>
+                    </div>
+                  )}
+                  <textarea value={note} onChange={e => updateLaneNote(li, e.target.value)} rows={5}
+                    placeholder={`Your notes on ${lane.owner}'s lane for this 1:1 — wins, concerns, questions for Brendon, anything you want to flag.`}
+                    style={{ width: "100%", border: `1.5px solid ${note ? lane.color + "70" : "#E8E8E8"}`, borderRadius: 8, padding: "11px 13px", fontSize: 12, resize: "vertical", outline: "none", background: note ? lane.color + "10" : "#fff", boxSizing: "border-box", lineHeight: 1.7, color: "#333" }} />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function App() {
   const [data, setDataRaw] = useState(DEFAULT_DATA);
   const [loaded, setLoaded] = useState(false);
@@ -436,6 +568,8 @@ function App() {
   const [slideIdx, setSlideIdx] = useState(0);
   const [presentMeeting, setPresentMeeting] = useState("m1");
   const [unlocked, setUnlocked] = useState(false);
+  const [brendonUnlocked, setBrendonUnlocked] = useState(false);
+  const [pwMode, setPwMode] = useState("directors"); // "directors" | "brendon"
   const [showPwModal, setShowPwModal] = useState(false);
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState(false);
@@ -483,11 +617,36 @@ function App() {
 
   function withAuth(fn) {
     if (unlocked) { fn(); return; }
+    setPwMode("directors");
     setPendingAction(() => fn); setPwInput(""); setPwError(false); setShowPwModal(true);
   }
+  function requestBrendonAccess(onSuccess) {
+    if (brendonUnlocked) { onSuccess(); return; }
+    setPwMode("brendon");
+    setPendingAction(() => onSuccess);
+    setPwInput(""); setPwError(false); setShowPwModal(true);
+  }
+  function handleTabClick(tabId) {
+    if (tabId === "brendon" && !brendonUnlocked) {
+      requestBrendonAccess(() => setTab("brendon"));
+    } else {
+      setTab(tabId);
+    }
+  }
+  function lockBrendon() {
+    setBrendonUnlocked(false);
+    setTab("lanes");
+  }
   function submitPassword() {
-    if (pwInput === PASSWORD) { setUnlocked(true); setShowPwModal(false); if (pendingAction) { pendingAction(); setPendingAction(null); } }
-    else setPwError(true);
+    const correct = pwMode === "brendon" ? BRENDON_PASSWORD : PASSWORD;
+    if (pwInput === correct) {
+      if (pwMode === "brendon") setBrendonUnlocked(true);
+      else setUnlocked(true);
+      setShowPwModal(false);
+      if (pendingAction) { pendingAction(); setPendingAction(null); }
+    } else {
+      setPwError(true);
+    }
   }
 
   const ky = (tid, mid) => `${tid}::${mid}`;
@@ -538,7 +697,12 @@ function App() {
   );
 
   const SS = STATUS_STYLES; const MS = MS_STYLES;
-  const TABS = [{ id:"biweekly", label:"Biweekly Mode", isNew:true }, { id:"lanes", label:"Lanes Progress" }, { id:"systems", label:"Systems Status" }];
+  const TABS = [
+    { id:"biweekly", label:"Biweekly Mode" },
+    { id:"lanes", label:"Lanes Progress" },
+    { id:"systems", label:"Systems Status" },
+    { id:"brendon", label:"Brendon 1:1", isPrivate:true },
+  ];
 
   return (
     <div style={{ fontFamily:"'DM Sans',sans-serif", padding:"20px 16px", maxWidth:1400, margin:"0 auto", minHeight:"100vh", background:"#F7F7F8" }}>
@@ -551,7 +715,7 @@ function App() {
           <span style={{ fontSize:11, color: saving ? "#F4A261" : lastSaved ? "#28A745" : "#ccc", fontFamily:"'DM Mono',monospace" }}>
             {saving ? "Saving…" : lastSaved ? `Saved ${lastSaved.toLocaleTimeString([], {hour:"2-digit",minute:"2-digit"})}` : "Live"}
           </span>
-          <button onClick={() => { if (unlocked) setUnlocked(false); else { setPwInput(""); setPwError(false); setPendingAction(null); setShowPwModal(true); } }}
+          <button onClick={() => { if (unlocked) setUnlocked(false); else { setPwMode("directors"); setPwInput(""); setPwError(false); setPendingAction(null); setShowPwModal(true); } }}
             style={{ display:"flex", alignItems:"center", gap:6, padding:"7px 14px", borderRadius:8, border:`1.5px solid ${unlocked?"#28A745":"#ddd"}`, background:unlocked?"#EAFAF0":"#FAFAFA", color:unlocked?"#155724":"#999", fontSize:12, fontWeight:600, cursor:"pointer" }}>
             {unlocked ? "🔓 Editing — Lock" : "🔒 View Only"}
           </button>
@@ -562,16 +726,23 @@ function App() {
         </div>
       </div>
 
-      <div style={{ display:"flex", gap:0, marginBottom:20, borderBottom:"2px solid #E8E8E8" }}>
-        {TABS.map(t => (
-          <button key={t.id} onClick={() => setTab(t.id)} style={{ padding:"10px 20px", border:"none", fontSize:13, fontWeight:600, cursor:"pointer", background:"transparent", color:tab===t.id?"#1a1a1a":"#999", borderBottom:tab===t.id?"2px solid #1a1a1a":"2px solid transparent", marginBottom:-2 }}>
-            {t.label}
-            {t.isNew && <span style={{ marginLeft:6, fontSize:9, background:"#E63946", color:"#fff", borderRadius:4, padding:"1px 5px", fontWeight:700, verticalAlign:"middle" }}>NEW</span>}
-          </button>
-        ))}
+      <div style={{ display:"flex", gap:0, marginBottom:20, borderBottom:"2px solid #E8E8E8", flexWrap:"wrap" }}>
+        {TABS.map(t => {
+          const isActive = tab === t.id;
+          const isBrendonLocked = t.isPrivate && !brendonUnlocked;
+          return (
+            <button key={t.id} onClick={() => handleTabClick(t.id)}
+              style={{ padding:"10px 20px", border:"none", fontSize:13, fontWeight:600, cursor:"pointer", background:"transparent", color:isActive?"#1a1a1a":"#999", borderBottom:isActive?"2px solid #1a1a1a":"2px solid transparent", marginBottom:-2, display:"flex", alignItems:"center", gap:6 }}>
+              {t.isPrivate && <span style={{ fontSize:11 }}>{isBrendonLocked ? "🔒" : "🔓"}</span>}
+              {t.label}
+            </button>
+          );
+        })}
       </div>
 
       {tab==="biweekly" && <BiweeklyTab data={data} setData={setData} unlocked={unlocked} withAuth={withAuth} />}
+
+      {tab==="brendon" && brendonUnlocked && <BrendonTab data={data} setData={setData} onLock={lockBrendon} />}
 
       {tab==="lanes" && <>
         <p style={{ fontSize:11, color:"#aaa", margin:"-12px 0 16px" }}>{unlocked?"Click a dot to cycle status · Click a value to enter actuals · Right-click for notes":"🔒 View only — lock button to edit"}</p>
@@ -664,13 +835,13 @@ function App() {
         const OverviewSlide=()=>{const[openLanes,setOpenLanes]=useState({});return <div style={{...pS}}><div style={{ flex:1, background:"#F7F7F8", display:"flex", flexDirection:"column", overflow:"hidden" }}><div style={{ width:"100%", height:4, background:"#E63946", flexShrink:0 }} /><div style={{ background:"#2D2D2D", padding:"16px 60px", flexShrink:0 }}><h2 style={{ fontSize:26, fontWeight:700, color:"#fff", margin:0, fontFamily:"Georgia,serif" }}>LANES OVERVIEW — {ml}</h2></div><div style={{ flex:1, overflowY:"auto", padding:"20px 60px" }}>{LANES.map(lane=>{const targets=getLaneLatestValues(lane,mid);const onC=targets.filter(t=>t.status==="on-track").length;const atC=targets.filter(t=>t.status==="at-risk").length;const offC=targets.filter(t=>t.status==="off-track").length;const isOpen=!!openLanes[lane.name];return <div key={lane.name} style={{ marginBottom:10, border:"1px solid #E8E8E8", borderRadius:8, overflow:"hidden" }}><div onClick={()=>setOpenLanes(p=>({...p,[lane.name]:!p[lane.name]}))} style={{ display:"flex", alignItems:"center", gap:16, padding:"13px 20px", background:"#fff", borderLeft:`4px solid ${lane.color}`, cursor:"pointer", userSelect:"none" }}><span style={{ fontSize:14, fontWeight:700, color:isOpen?lane.color:"#1a1a1a", flex:1 }}>{lane.name}</span><span style={{ fontSize:12, color:"#999", marginRight:12 }}>{lane.owner}</span><div style={{ display:"flex", gap:6 }}>{onC>0&&<span style={{ padding:"3px 10px", borderRadius:10, background:"#D4EDDA", color:"#155724", fontSize:11, fontWeight:600 }}>{onC} On Track</span>}{atC>0&&<span style={{ padding:"3px 10px", borderRadius:10, background:"#FFF3CD", color:"#856404", fontSize:11, fontWeight:600 }}>{atC} At Risk</span>}{offC>0&&<span style={{ padding:"3px 10px", borderRadius:10, background:"#F8D7DA", color:"#721C24", fontSize:11, fontWeight:600 }}>{offC} Off Track</span>}{onC===0&&atC===0&&offC===0&&<span style={{ fontSize:11, color:"#ccc" }}>No status</span>}</div><span style={{ fontSize:14, color:"#aaa", marginLeft:8, transform:isOpen?"rotate(180deg)":"none", transition:"transform 0.2s", display:"inline-block" }}>▼</span></div>{isOpen&&<table style={{ width:"100%", borderCollapse:"collapse", fontSize:13 }}><thead><tr style={{ background:"#2D2D2D" }}>{["Target","Goal","Actual","Status","Progress"].map((h,hi)=><th key={h} style={{ padding:"8px 14px", color:"#fff", fontWeight:600, fontSize:10, textTransform:"uppercase", letterSpacing:"0.05em", textAlign:hi===0?"left":"center", width:["30%","13%","13%","18%","26%"][hi] }}>{h}</th>)}</tr></thead><tbody>{(()=>{let prevGroup=null;const rows=[];targets.forEach(t=>{if(t.group&&t.group!==prevGroup){rows.push(<tr key={`g-${t.group}`}><td colSpan={5} style={{ padding:"6px 14px 2px", fontSize:10, fontWeight:700, color:"#999", textTransform:"uppercase", letterSpacing:"0.06em", background:"#FAFAFA", borderTop:prevGroup?"1px solid #E8E8E8":"none" }}>{t.group}</td></tr>);prevGroup=t.group;}const sStyle=SS[t.status||null]||SS[null];const mStyle=MS[t.ms]||MS["not-started"];rows.push(<tr key={t.id} style={{ borderTop:"1px solid #F0F0F0", background:t.isMilestone?mStyle.cellBg:sStyle.cellBg }}><td style={{ padding:"9px 14px", fontWeight:500, color:"#333" }}>{t.label}</td><td style={{ textAlign:"center", padding:"7px 8px", color:"#999", fontSize:12, fontFamily:"'DM Mono',monospace" }}>{t.goalDisp}</td><td style={{ textAlign:"center", padding:"7px 8px", fontFamily:"'DM Mono',monospace", fontWeight:600, fontSize:13, color:t.disp?"#1a1a1a":"#ccc" }}>{t.disp||"—"}</td><td style={{ textAlign:"center", padding:"7px 8px" }}>{t.isMilestone?<span style={{ padding:"3px 10px", borderRadius:10, background:mStyle.bg, color:mStyle.text, fontSize:11, fontWeight:600 }}>{mStyle.label}</span>:<span style={{ padding:"3px 10px", borderRadius:10, background:sStyle.bg==="transparent"?"#F0F0F0":sStyle.bg, color:sStyle.text, fontSize:11, fontWeight:600 }}><span style={{ display:"inline-block", width:6, height:6, borderRadius:"50%", background:sStyle.dot, marginRight:4, verticalAlign:"middle" }} />{sStyle.label}</span>}</td><td style={{ padding:"7px 14px" }}>{t.isMilestone?(()=>{const msPct=t.ms==="done"?100:t.ms==="in-progress"?50:0;return <div style={{ display:"flex", alignItems:"center", gap:8 }}><div style={{ flex:1, height:7, background:"#EBEBEB", borderRadius:4, overflow:"hidden" }}><div style={{ width:`${msPct}%`, height:"100%", borderRadius:4, background:msPct===100?"#28A745":msPct===50?"#3B82F6":"#EBEBEB" }} /></div><span style={{ fontSize:11, fontWeight:600, color:msPct>0?"#666":"#ccc", fontFamily:"'DM Mono',monospace" }}>{msPct}%</span></div>;})():t.prog?<div style={{ display:"flex", alignItems:"center", gap:8 }}><div style={{ flex:1, height:7, background:"#EBEBEB", borderRadius:4, overflow:"hidden" }}><div style={{ width:`${Math.min(t.prog.pct,100)}%`, height:"100%", borderRadius:4, background:t.prog.pct>=90?"#28A745":t.prog.pct>=60?"#FFC107":"#DC3545" }} /></div><span style={{ fontSize:11, fontWeight:600, color:"#666", fontFamily:"'DM Mono',monospace" }}>{t.prog.pct}%</span></div>:<span style={{ fontSize:11, color:"#ddd" }}>—</span>}</td></tr>);});return rows;})()}</tbody></table>}</div>;})}</div></div>{footer}</div>;};
         slides.push(<OverviewSlide key="overview" />);
         if((data.systems||[]).length>0)slides.push(<div key="systems" style={{...pS}}><div style={{ flex:1, background:"#F7F7F8", display:"flex", flexDirection:"column", overflow:"auto" }}><div style={{ width:"100%", height:4, background:"#E63946", flexShrink:0 }} /><div style={{ background:"#2D2D2D", padding:"16px 60px", flexShrink:0 }}><h2 style={{ fontSize:26, fontWeight:700, color:"#fff", margin:0, fontFamily:"Georgia,serif" }}>SYSTEMS STATUS — {ml}</h2></div><div style={{ padding:"20px 60px", flex:1 }}><table style={{ width:"100%", borderCollapse:"collapse", fontSize:14 }}><thead><tr style={{ background:"#2D2D2D" }}>{["System","Status","Notes"].map((h,hi)=><th key={h} style={{ padding:"10px 14px", color:"#fff", fontWeight:600, fontSize:11, textTransform:"uppercase", textAlign:hi===0?"left":"center", width:["40%","30%","30%"][hi] }}>{h}</th>)}</tr></thead><tbody>{(data.systems||[]).map((sys,si)=>{const k=ky(sys.id,mid);const s=SS[data.statuses[k]||null];const note=data.notes[k]||"";return <tr key={sys.id} style={{ borderTop:si>0?"1px solid #F0F0F0":"none", background:s.cellBg }}><td style={{ padding:"10px 14px", fontWeight:500, color:"#333" }}>{sys.name}</td><td style={{ textAlign:"center", padding:"8px" }}><span style={{ padding:"4px 14px", borderRadius:12, background:s.bg==="transparent"?"#F0F0F0":s.bg, color:s.text, fontSize:12, fontWeight:600 }}><span style={{ display:"inline-block", width:7, height:7, borderRadius:"50%", background:s.dot, marginRight:5, verticalAlign:"middle" }} />{s.label}</span></td><td style={{ padding:"10px 14px", color:"#666", fontSize:13 }}>{note}</td></tr>;})} </tbody></table></div></div>{footer}</div>);
-        const CrossLaneSlide=()=>{const fields=[{key:"handoffs",label:"Handoffs & Conflicts",color:"#457B9D",placeholder:"e.g. Lead routing overlap between Lane 1 and Lane 2…"},{key:"decisions",label:"Decisions Needed",color:"#E63946",placeholder:"e.g. Approve budget increase for Lane 3…"},{key:"actions",label:"Action Items",color:"#28A745",placeholder:"e.g. Daisy to update HubSpot by 21 Apr…"}];return <div style={{...pS}}><div style={{ flex:1, background:"#F7F7F8", display:"flex", flexDirection:"column", overflow:"hidden" }}><div style={{ width:"100%", height:4, background:"#E63946", flexShrink:0 }} /><div style={{ background:"#2D2D2D", padding:"16px 60px", flexShrink:0, display:"flex", justifyContent:"space-between", alignItems:"center" }}><h2 style={{ fontSize:26, fontWeight:700, color:"#fff", margin:0, fontFamily:"Georgia,serif" }}>CROSS-LANE ISSUES & DECISIONS</h2>{!unlocked&&<button onClick={()=>{setPwInput("");setPwError(false);setPendingAction(null);setShowPwModal(true);}} style={{ padding:"6px 14px", borderRadius:8, border:"1.5px solid rgba(255,255,255,0.2)", background:"rgba(255,255,255,0.08)", color:"rgba(255,255,255,0.7)", fontSize:12, fontWeight:600, cursor:"pointer" }}>🔒 Unlock to Edit</button>}{unlocked&&<span style={{ fontSize:12, color:"#28A745", fontWeight:600 }}>🔓 Editing enabled</span>}</div><div style={{ flex:1, overflowY:"auto", padding:"20px 60px", display:"flex", flexDirection:"column", gap:16 }}>{fields.map(({key,label,color,placeholder})=>{const val=data.crosslane?.[key]||"";return <div key={key} style={{ background:"#fff", borderRadius:10, borderLeft:`4px solid ${color}`, overflow:"hidden", flex:1, display:"flex", flexDirection:"column" }}><div style={{ padding:"12px 20px 0", display:"flex", alignItems:"center", gap:8 }}><span style={{ width:8, height:8, borderRadius:"50%", background:color, flexShrink:0 }} /><h3 style={{ margin:0, fontSize:14, fontWeight:700, color:"#1a1a1a" }}>{label}</h3></div>{unlocked?<textarea value={val} onChange={e=>setData(d=>({...d,crosslane:{...(d.crosslane||{}),[key]:e.target.value}}))} placeholder={placeholder} style={{ flex:1, minHeight:80, resize:"none", border:"none", outline:"none", padding:"10px 20px 14px", fontSize:13, color:"#333", background:"transparent", lineHeight:1.6 }} />:<div onClick={()=>{setPwInput("");setPwError(false);setPendingAction(null);setShowPwModal(true);}} style={{ flex:1, minHeight:80, padding:"10px 20px 14px", fontSize:13, color:val?"#333":"#bbb", lineHeight:1.6, cursor:"pointer", fontStyle:val?"normal":"italic" }}>{val||placeholder}</div>}</div>;})}</div></div>{footer}</div>;};
+        const CrossLaneSlide=()=>{const fields=[{key:"handoffs",label:"Handoffs & Conflicts",color:"#457B9D",placeholder:"e.g. Lead routing overlap between Lane 1 and Lane 2…"},{key:"decisions",label:"Decisions Needed",color:"#E63946",placeholder:"e.g. Approve budget increase for Lane 3…"},{key:"actions",label:"Action Items",color:"#28A745",placeholder:"e.g. Daisy to update HubSpot by 21 Apr…"}];return <div style={{...pS}}><div style={{ flex:1, background:"#F7F7F8", display:"flex", flexDirection:"column", overflow:"hidden" }}><div style={{ width:"100%", height:4, background:"#E63946", flexShrink:0 }} /><div style={{ background:"#2D2D2D", padding:"16px 60px", flexShrink:0, display:"flex", justifyContent:"space-between", alignItems:"center" }}><h2 style={{ fontSize:26, fontWeight:700, color:"#fff", margin:0, fontFamily:"Georgia,serif" }}>CROSS-LANE ISSUES & DECISIONS</h2>{!unlocked&&<button onClick={()=>{setPwMode("directors");setPwInput("");setPwError(false);setPendingAction(null);setShowPwModal(true);}} style={{ padding:"6px 14px", borderRadius:8, border:"1.5px solid rgba(255,255,255,0.2)", background:"rgba(255,255,255,0.08)", color:"rgba(255,255,255,0.7)", fontSize:12, fontWeight:600, cursor:"pointer" }}>🔒 Unlock to Edit</button>}{unlocked&&<span style={{ fontSize:12, color:"#28A745", fontWeight:600 }}>🔓 Editing enabled</span>}</div><div style={{ flex:1, overflowY:"auto", padding:"20px 60px", display:"flex", flexDirection:"column", gap:16 }}>{fields.map(({key,label,color,placeholder})=>{const val=data.crosslane?.[key]||"";return <div key={key} style={{ background:"#fff", borderRadius:10, borderLeft:`4px solid ${color}`, overflow:"hidden", flex:1, display:"flex", flexDirection:"column" }}><div style={{ padding:"12px 20px 0", display:"flex", alignItems:"center", gap:8 }}><span style={{ width:8, height:8, borderRadius:"50%", background:color, flexShrink:0 }} /><h3 style={{ margin:0, fontSize:14, fontWeight:700, color:"#1a1a1a" }}>{label}</h3></div>{unlocked?<textarea value={val} onChange={e=>setData(d=>({...d,crosslane:{...(d.crosslane||{}),[key]:e.target.value}}))} placeholder={placeholder} style={{ flex:1, minHeight:80, resize:"none", border:"none", outline:"none", padding:"10px 20px 14px", fontSize:13, color:"#333", background:"transparent", lineHeight:1.6 }} />:<div onClick={()=>{setPwMode("directors");setPwInput("");setPwError(false);setPendingAction(null);setShowPwModal(true);}} style={{ flex:1, minHeight:80, padding:"10px 20px 14px", fontSize:13, color:val?"#333":"#bbb", lineHeight:1.6, cursor:"pointer", fontStyle:val?"normal":"italic" }}>{val||placeholder}</div>}</div>;})}</div></div>{footer}</div>;};
         slides.push(<CrossLaneSlide key="crosslane" />);
         slides.push(<div key="closing" style={{...pS}}><div style={{ flex:1, background:"#1A1A1A", display:"flex", flexDirection:"column", justifyContent:"center", padding:"0 60px", position:"relative" }}><div style={{ position:"absolute", top:0, left:0, right:0, height:4, background:"#E63946" }} /><h2 style={{ fontSize:38, fontWeight:700, color:"#fff", margin:0, fontFamily:"Georgia,serif" }}>Next Meeting</h2>{(()=>{const ci=MEETINGS.findIndex(m=>m.id===mid);const next=ci<MEETINGS.length-1?MEETINGS[ci+1]:null;return <p style={{ fontSize:22, color:"#E63946", fontWeight:700, margin:"16px 0 0" }}>{next?next.label:"End of Q2 — Day 90 Review"}</p>;})()}<p style={{ fontSize:16, color:"#888", margin:"24px 0 0" }}>Directors to update actuals in the tracker before the next meeting.</p><div style={{ display:"flex", gap:10, marginTop:40 }}>{LANES.map(l=><span key={l.name} style={{ width:16, height:16, borderRadius:"50%", background:l.color }} />)}</div></div>{footer}</div>);
         return slides[Math.min(slideIdx,slides.length-1)];
       })()}
 
-      {showPwModal&&(<div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300 }} onClick={()=>{setShowPwModal(false);setPendingAction(null);}}><div style={{ background:"#fff", borderRadius:14, padding:"32px 36px", width:380, boxShadow:"0 24px 64px rgba(0,0,0,0.2)" }} onClick={e=>e.stopPropagation()}><div style={{ fontSize:28, textAlign:"center", marginBottom:8 }}>🔐</div><h3 style={{ margin:"0 0 6px", fontSize:16, fontWeight:700, textAlign:"center", color:"#1a1a1a" }}>Directors Only</h3><p style={{ margin:"0 0 20px", fontSize:13, color:"#888", textAlign:"center" }}>Enter your password to enable editing.</p><input type="password" autoFocus value={pwInput} onChange={e=>{setPwInput(e.target.value);setPwError(false);}} onKeyDown={e=>e.key==="Enter"&&submitPassword()} placeholder="Password" style={{ width:"100%", padding:"10px 14px", border:`1.5px solid ${pwError?"#DC3545":"#ddd"}`, borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box", marginBottom:6 }} />{pwError&&<p style={{ margin:"0 0 10px", fontSize:12, color:"#DC3545", textAlign:"center" }}>Incorrect password. Try again.</p>}<button onClick={submitPassword} style={{ width:"100%", marginTop:10, padding:"10px", borderRadius:8, border:"none", background:"#1a1a1a", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>Unlock</button><button onClick={()=>{setShowPwModal(false);setPendingAction(null);}} style={{ width:"100%", marginTop:8, padding:"8px", borderRadius:8, border:"1.5px solid #E8E8E8", background:"transparent", color:"#999", fontSize:13, cursor:"pointer" }}>Cancel</button></div></div>)}
+      {showPwModal&&(<div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.45)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:300 }} onClick={()=>{setShowPwModal(false);setPendingAction(null);}}><div style={{ background:"#fff", borderRadius:14, padding:"32px 36px", width:380, boxShadow:"0 24px 64px rgba(0,0,0,0.2)" }} onClick={e=>e.stopPropagation()}><div style={{ fontSize:28, textAlign:"center", marginBottom:8 }}>{pwMode==="brendon"?"🔐":"🔐"}</div><h3 style={{ margin:"0 0 6px", fontSize:16, fontWeight:700, textAlign:"center", color:"#1a1a1a" }}>{pwMode==="brendon"?"Private — Carlota & Brendon":"Directors Only"}</h3><p style={{ margin:"0 0 20px", fontSize:13, color:"#888", textAlign:"center" }}>{pwMode==="brendon"?"Enter your 1:1 access password.":"Enter your password to enable editing."}</p><input type="password" autoFocus value={pwInput} onChange={e=>{setPwInput(e.target.value);setPwError(false);}} onKeyDown={e=>e.key==="Enter"&&submitPassword()} placeholder="Password" style={{ width:"100%", padding:"10px 14px", border:`1.5px solid ${pwError?"#DC3545":"#ddd"}`, borderRadius:8, fontSize:14, outline:"none", boxSizing:"border-box", marginBottom:6 }} />{pwError&&<p style={{ margin:"0 0 10px", fontSize:12, color:"#DC3545", textAlign:"center" }}>Incorrect password. Try again.</p>}<button onClick={submitPassword} style={{ width:"100%", marginTop:10, padding:"10px", borderRadius:8, border:"none", background:"#1a1a1a", color:"#fff", fontSize:14, fontWeight:700, cursor:"pointer" }}>Unlock</button><button onClick={()=>{setShowPwModal(false);setPendingAction(null);}} style={{ width:"100%", marginTop:8, padding:"8px", borderRadius:8, border:"1.5px solid #E8E8E8", background:"transparent", color:"#999", fontSize:13, cursor:"pointer" }}>Cancel</button></div></div>)}
       {noteCell&&(<div style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.3)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:100 }} onClick={commitNote}><div style={{ background:"#fff", borderRadius:12, padding:24, width:360, boxShadow:"0 20px 60px rgba(0,0,0,0.15)" }} onClick={e=>e.stopPropagation()}><h3 style={{ margin:"0 0 12px", fontSize:14, fontWeight:600 }}>Note</h3><textarea value={noteText} onChange={e=>setNoteText(e.target.value)} rows={4} autoFocus style={{ width:"100%", border:"1.5px solid #ddd", borderRadius:8, padding:10, fontSize:13, resize:"vertical", boxSizing:"border-box" }} placeholder="Add context…" /><div style={{ display:"flex", justifyContent:"flex-end", marginTop:12 }}><button onClick={commitNote} style={{ padding:"6px 16px", borderRadius:6, border:"none", background:"#1a1a1a", color:"#fff", fontSize:12, fontWeight:600, cursor:"pointer" }}>Save</button></div></div></div>)}
     </div>
   );
