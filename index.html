@@ -37,17 +37,17 @@ async function dbSet(key, value) {
 }
 
 const LANES = [
-  { name: "Lane 1: New Revenue", owner: "José", team: "Luken, Lindi, Caterina, Ali, Daisy", color: "#E63946",
+  { name: "Lane 1: New Revenue", owner: "José", team: "Luken, Lindi, Caterina, Daisy", color: "#E63946",
     targets: [{ id: "1a", label: "Net-new revenue", goal: 150000, format: "eur" }] },
   { name: "Lane 2: Existing Business", owner: "JJ", team: "Michelle, Elisa, Carmen, Jesus, Tony, Carolina", color: "#457B9D",
     targets: [{ id: "2a", label: "Clinic contract reactivations (60 days)", goal: 5, format: "num" }, { id: "2b", label: "Growth on PC & Lab services", goal: 5, format: "pct" }] },
   { name: "Lane 3: DSD Online & Education", owner: "Carlos", team: "John Peterson, Eric Peterson + marketing support", color: "#2A9D8F",
     targets: [{ id: "3a", label: "Revenue", goal: 40000, format: "eur" }, { id: "3b", label: "Tickets sold", goal: 90, format: "num" }, { id: "3c", label: "New platform users", goal: 400, format: "num" }, { id: "3d", label: "Activation rate", goal: 50, format: "pct" }] },
-  { name: "Lane 4: DSD Centre", owner: "John", team: "Planning Centre + Lab Operations", color: "#E9C46A",
+  { name: "Lane 4: DSD Centre", owner: "John", team: "Planning Center + Lab Operations", color: "#E9C46A",
     targets: [
-      { id: "4a", label: "OTDR", goal: 95, format: "pct", group: "Planning Centre", goalLabel: "≥ 95%", threshold: true },
-      { id: "4b", label: "Turnaround (working days)", goal: 3, format: "num", lowerIsBetter: true, group: "Planning Centre", goalLabel: "≤ 3 days", threshold: true },
-      { id: "4c", label: "CPI", goal: 0.90, format: "dec", group: "Planning Centre", goalLabel: "≥ 0.90", threshold: true },
+      { id: "4a", label: "OTDR", goal: 95, format: "pct", group: "Planning Center", goalLabel: "≥ 95%", threshold: true },
+      { id: "4b", label: "Turnaround (working days)", goal: 3, format: "num", lowerIsBetter: true, group: "Planning Center", goalLabel: "≤ 3 days", threshold: true },
+      { id: "4c", label: "CPI", goal: 0.90, format: "dec", group: "Planning Center", goalLabel: "≥ 0.90", threshold: true },
       { id: "4d", label: "Revenue / month", goal: 140000, format: "eur", group: "Lab" },
       { id: "4e", label: "LER", goal: 3.0, format: "dec", group: "Lab", goalLabel: "≥ 3.00", threshold: true },
     ] },
