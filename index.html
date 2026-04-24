@@ -25,7 +25,6 @@ const SUPABASE_KEY = "sb_publishable_JFQ0fCmfC_AVm8yPtbLSjw_dmCAXy_-";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const STORAGE_KEY = "spartan-tracker-v4";
 const PASSWORD = "spartanprogresstracker";
-const BRENDON_PASSWORD = "atcbrendonreports";
 const POLL_INTERVAL = 30000;
 
 async function dbGet(key) {
@@ -142,7 +141,7 @@ const PRESET_SYSTEMS = {
   ],
 };
 
-const DEFAULT_DATA = { statuses: {}, values: {}, notes: {}, milestones: {}, systems: [], crosslane: {}, lane_systems: {}, sys_ms_status: {}, biweekly: {}, brendon_notes: {} };
+const DEFAULT_DATA = { statuses: {}, values: {}, notes: {}, milestones: {}, systems: [], crosslane: {}, lane_systems: {}, sys_ms_status: {}, biweekly: {} };
 
 function fmtVal(val, format) {
   if (val === "" || val == null) return "";
@@ -437,12 +436,10 @@ function App() {
   const [slideIdx, setSlideIdx] = useState(0);
   const [presentMeeting, setPresentMeeting] = useState("m1");
   const [unlocked, setUnlocked] = useState(false);
-  const [brendonUnlocked, setBrendonUnlocked] = useState(false);
   const [showPwModal, setShowPwModal] = useState(false);
   const [pwInput, setPwInput] = useState("");
   const [pwError, setPwError] = useState(false);
   const [pendingAction, setPendingAction] = useState(null);
-  const [pwModalType, setPwModalType] = useState("main"); // "main" or "brendon"
   const saveTimer = useRef(null);
   const lastDataRef = useRef(null);
 
