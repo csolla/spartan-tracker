@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CAP Pipeline — Asana Dashboard</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,900&family=Outfit:wght@300;400;500;600;700&display=swap');
+  :root{
+    --navy:#1B2A4A; --navy-2:#243861; --teal:#00A6A6; --green:#2E9E5B; --red:#D64550;
+    --yellow:#E8A33D; --purple:#6B5B95; --ink:#0e1730; --paper:#f5f6fa; --card:#fff;
+    --muted:#8A94A6; --line:rgba(27,42,74,.08);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Outfit',sans-serif;color:var(--ink);
+    background:radial-gradient(1200px 600px at 85% -10%,rgba(0,166,166,.12),transparent 60%),
+      radial-gradient(900px 500px at -10% 110%,rgba(107,91,149,.12),transparent 55%),var(--paper);
+    min-height:100vh;padding:32px clamp(16px,4vw,56px);-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1320px;margin:0 auto}
+  header{display:flex;align-items:flex-end;justify-content:space-between;gap:24px;flex-wrap:wrap;margin-bottom:28px}
+  .eyebrow{font-size:12px;letter-spacing:.32em;text-transform:uppercase;color:var(--teal);font-weight:600;margin-bottom:8px}
+  h1{font-family:'Fraunces',serif;font-weight:900;line-height:.95;font-size:clamp(30px,5vw,54px);color:var(--navy);letter-spacing:-.02em}
+  h1 em{font-style:italic;color:var(--teal)}
+  .sub{color:var(--muted);font-size:15px;margin-top:10px;max-width:560px}
+  .controls{display:flex;flex-direction:column;gap:8px;min-width:280px}
+  .btn{background:var(--navy);color:#fff;border:none;border-radius:12px;padding:12px 18px;font-family:'Outfit';font-weight:600;font-size:14px;cursor:pointer;transition:.2s}
+  .btn:hover{background:var(--navy-2);transform:translateY(-1px)}
+  .btn.ghost{background:transparent;color:var(--navy);border:1px solid var(--line)}
+  .status{font-size:12.5px;color:var(--muted);text-align:right}
+
+  /* token modal */
+  .modal{position:fixed;inset:0;background:rgba(14,23,48,.55);backdrop-filter:blur(6px);display:none;align-items:center;justify-content:center;z-index:50;padding:20px}
+  .modal.show{display:flex}
+  .modal .box{background:#fff;border-radius:22px;padding:32px;max-width:520px;width:100%;box-shadow:0 30px 80px -30px rgba(0,0,0,.5)}
+  .modal h2{font-family:'Fraunces',serif;color:var(--navy);font-size:24px;margin-bottom:10px}
+  .modal p{font-size:14px;color:var(--muted);margin-bottom:8px;line-height:1.5}
+  .modal a{color:var(--teal)}
+  .modal input{width:100%;padding:13px 15px;border:1.5px solid var(--line);border-radius:12px;font-family:'Outfit';font-size:14px;margin:14px 0;outline:none}
+  .modal input:focus{border-color:var(--teal)}
+  .modal .note{font-size:12px;color:var(--muted);background:rgba(0,166,166,.08);padding:12px;border-radius:10px;margin-bottom:16px}
+  .modal .row{display:flex;gap:10px}
+
+  .empty{text-align:center;padding:90px 20px;color:var(--muted)}
+  .empty .big{font-family:'Fraunces',serif;font-size:26px;color:var(--navy);margin-bottom:10px}
+  .err{background:rgba(214,69,80,.1);color:var(--red);border-radius:12px;padding:14px 18px;margin:16px 0;font-size:14px;display:none}
+
+  .dash{display:none;animation:fade .6s ease both}
+  @keyframes fade{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+  .section-label{font-size:12px;letter-spacing:.28em;text-transform:uppercase;color:var(--muted);font-weight:600;margin:34px 4px 14px;display:flex;align-items:center;gap:12px}
+  .section-label::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  .pills{display:grid;grid-template-columns:repeat(5,1fr);gap:14px}
+  @media(max-width:900px){.pills{grid-template-columns:repeat(2,1fr)}}
+  .pill{background:var(--card);border-radius:18px;padding:20px;border:1px solid var(--line);box-shadow:0 10px 30px -24px rgba(27,42,74,.5);position:relative;overflow:hidden}
+  .pill .bar{position:absolute;left:0;top:0;bottom:0;width:5px}
+  .pill .n{font-family:'Fraunces',serif;font-weight:900;font-size:38px;line-height:1}
+  .pill .t{font-size:12.5px;color:var(--muted);margin-top:6px;font-weight:500}
+
+  .cards{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:900px){.cards{grid-template-columns:1fr}}
+  .card{background:var(--card);border-radius:22px;padding:24px;border:1px solid var(--line);box-shadow:0 14px 40px -30px rgba(27,42,74,.55)}
+  .card h3{font-family:'Fraunces',serif;font-size:20px;color:var(--navy);margin-bottom:18px;font-weight:600}
+
+  /* funnel / phases */
+  .funnel{display:flex;flex-direction:column;gap:11px}
+  .frow .top{display:flex;justify-content:space-between;font-size:13.5px;margin-bottom:5px}
+  .frow .nm{color:var(--ink);font-weight:500}
+  .frow .vv{color:var(--navy);font-weight:700}
+  .track{height:26px;border-radius:8px;background:rgba(27,42,74,.06);overflow:hidden;display:flex;align-items:center}
+  .fillb{height:100%;border-radius:8px;width:0;transition:width 1s cubic-bezier(.22,1,.36,1);display:flex;align-items:center;padding-left:10px;color:#fff;font-size:12px;font-weight:600}
+
+  .donut-wrap{display:flex;align-items:center;gap:24px;flex-wrap:wrap}
+  .donut{position:relative;width:180px;height:180px;flex:0 0 auto}
+  .donut .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+  .donut .center .big{font-family:'Fraunces',serif;font-weight:900;font-size:30px;color:var(--navy)}
+  .donut .center .lbl{font-size:11px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase}
+  .legend{display:flex;flex-direction:column;gap:10px;flex:1;min-width:160px}
+  .legend .row{display:flex;align-items:center;gap:10px;font-size:14px}
+  .legend .dot{width:12px;height:12px;border-radius:4px;flex:0 0 auto}
+  .legend .nm{flex:1}
+  .legend .pct{font-weight:700;color:var(--navy)}
+  .legend .ct{color:var(--muted);font-size:12.5px;min-width:54px;text-align:right}
+
+  .tbl{width:100%;border-collapse:collapse;font-size:13.5px}
+  .tbl th{text-align:left;color:var(--muted);font-weight:600;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .tbl td{padding:11px 10px;border-bottom:1px solid var(--line)}
+  .tbl tr:last-child td{border-bottom:none}
+  .chip{display:inline-block;padding:3px 10px;border-radius:20px;font-size:12px;font-weight:600}
+  .doc{font-weight:600;color:var(--navy)}
+
+  .foot-note{text-align:center;color:var(--muted);font-size:12.5px;margin-top:40px;padding-top:18px;border-top:1px solid var(--line)}
+  .pulse{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--green);margin-right:6px;animation:p 1.6s infinite}
+  @keyframes p{0%,100%{opacity:1}50%{opacity:.3}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <div class="eyebrow">DSD · Asana Pipeline</div>
+      <h1>Case Acceptance<br><em>Presentation Pipeline</em></h1>
+      <p class="sub">Estado del pipeline en vivo desde Asana. Los datos se leen directamente de tu proyecto al actualizar.</p>
+    </div>
+    <div class="controls">
+      <button class="btn" id="refreshBtn">↻ Actualizar datos</button>
+      <button class="btn ghost" id="tokenBtn">Cambiar token</button>
+      <div class="status" id="status">—</div>
+    </div>
+  </header>
+
+  <div class="err" id="err"></div>
+
+  <div class="empty" id="empty">
+    <div class="big">Conecta tu Asana para empezar</div>
+    <div>Pega tu token personal una vez y el dashboard cargará tu pipeline en vivo.</div>
+    <br>
+    <button class="btn" id="startBtn">Conectar Asana</button>
+  </div>
+
+  <div class="dash" id="dash">
+    <div class="section-label">Resumen del pipeline</div>
+    <div class="pills" id="pills"></div>
+
+    <div class="section-label">Embudo por fase &amp; resultado</div>
+    <div class="cards">
+      <div class="card">
+        <h3>Casos por fase del workflow</h3>
+        <div class="funnel" id="funnel"></div>
+      </div>
+      <div class="card">
+        <h3>Resultado (Won / Lost / En pipeline)</h3>
+        <div class="donut-wrap">
+          <div class="donut" id="donut"><div class="center"><div class="big" id="dCenter">0%</div><div class="lbl">Win rate</div></div></div>
+          <div class="legend" id="legend"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-label">Por tipo de cliente &amp; por doctor</div>
+    <div class="cards">
+      <div class="card"><h3>Client Type</h3><div class="funnel" id="ctype"></div></div>
+      <div class="card"><h3>Casos por doctor</h3><div id="byDoc"></div></div>
+    </div>
+
+    <div class="section-label">Casos en el pipeline</div>
+    <div class="card">
+      <table class="tbl" id="caseTbl"><thead><tr>
+        <th>Doctor</th><th>Caso / Paciente</th><th>Fase</th><th>Tipo</th><th>Responsable</th>
+      </tr></thead><tbody></tbody></table>
+    </div>
+
+    <div class="foot-note"><span class="pulse"></span>Última actualización: <span id="ts">—</span></div>
+  </div>
+</div>
+
+<!-- token modal -->
+<div class="modal" id="modal">
+  <div class="box">
+    <h2>Conectar con Asana</h2>
+    <p>Pega tu <strong>Personal Access Token</strong> de Asana. Lo creas en
+      <a href="https://app.asana.com/0/my-apps" target="_blank">app.asana.com/0/my-apps</a> → "Create new token".</p>
+    <div class="note">🔒 Tu token se guarda solo en este navegador (localStorage). No se incluye en el archivo ni se envía a ningún sitio salvo a la API de Asana.</div>
+    <input type="password" id="tokenInput" placeholder="1/12345…  (tu token)" autocomplete="off">
+    <div class="row">
+      <button class="btn" id="saveToken" style="flex:1">Guardar y cargar</button>
+      <button class="btn ghost" id="closeModal">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const PROJECT_ID="1215424620096409";
+const WON_SECTION="CASE WON", LOST_SECTION="CASE LOST";
+const PHASE_ORDER=["01. Preparation Phase","02. Designing Phase","03.Presentation Phase","04. Follow Up Phase","CASE WON","CASE LOST"];
+const PHASE_COLORS={"01. Preparation Phase":"#8A94A6","02. Designing Phase":"#3b6fb0","03.Presentation Phase":"#00A6A6","04. Follow Up Phase":"#6B5B95","CASE WON":"#2E9E5B","CASE LOST":"#D64550"};
+const TYPE_COLORS={"CAP":"#00A6A6","CAA":"#6B5B95","CAPx3":"#1B2A4A"};
+
+const $=id=>document.getElementById(id);
+const modal=$('modal');
+function showModal(){modal.classList.add('show');$('tokenInput').value=localStorage.getItem('asana_token')||''}
+function hideModal(){modal.classList.remove('show')}
+$('tokenBtn').onclick=showModal; $('startBtn').onclick=showModal; $('closeModal').onclick=hideModal;
+$('saveToken').onclick=()=>{const t=$('tokenInput').value.trim();if(!t)return;localStorage.setItem('asana_token',t);hideModal();load();};
+$('refreshBtn').onclick=load;
+
+function setStatus(s){$('status').textContent=s}
+function showErr(m){const e=$('err');e.style.display='block';e.textContent=m;setStatus('Error')}
+function clearErr(){$('err').style.display='none'}
+
+async function asana(path){
+  const token=localStorage.getItem('asana_token');
+  if(!token)throw new Error('NO_TOKEN');
+  const res=await fetch('https://app.asana.com/api/1.0'+path,{headers:{Authorization:'Bearer '+token}});
+  if(res.status===401)throw new Error('Token inválido o sin permisos (401).');
+  if(!res.ok)throw new Error('Asana respondió '+res.status);
+  return (await res.json()).data;
+}
+
+async function load(){
+  clearErr();
+  if(!localStorage.getItem('asana_token')){showModal();return;}
+  setStatus('Cargando desde Asana…');
+  try{
+    const fields='name,completed,assignee.name,due_on,memberships.section.name,'+
+      'custom_fields.name,custom_fields.display_value,custom_fields.number_value,custom_fields.enum_value.name';
+    const tasks=await asana(`/projects/${PROJECT_ID}/tasks?opt_fields=${encodeURIComponent(fields)}&limit=100`);
+    render(tasks);
+    setStatus('✓ Conectado · '+tasks.length+' casos');
+  }catch(e){
+    if(e.message==='NO_TOKEN'){showModal();return;}
+    showErr('No se pudo cargar: '+e.message);
+    console.error(e);
+  }
+}
+
+function phaseOf(t){
+  const secs=(t.memberships||[]).map(m=>m.section&&m.section.name).filter(Boolean);
+  // prefer a workflow/result section from our known list
+  for(const p of PHASE_ORDER){if(secs.includes(p))return p;}
+  return secs[0]||'(sin fase)';
+}
+function cf(t,name){
+  const f=(t.custom_fields||[]).find(x=>x.name===name);
+  if(!f)return null;
+  if(f.enum_value)return f.enum_value.name;
+  if(f.number_value!=null)return f.number_value;
+  return f.display_value||null;
+}
+
+function render(tasks){
+  const total=tasks.length;
+  const phase={}; PHASE_ORDER.forEach(p=>phase[p]=0);
+  const types={}; const docs={};
+  tasks.forEach(t=>{
+    const p=phaseOf(t); phase[p]=(phase[p]||0)+1;
+    const ct=cf(t,'Client Type')||'(sin tipo)'; types[ct]=(types[ct]||0)+1;
+    const dr=(t.name.match(/Dr\.?\s*[^\-—]+/i)||[t.assignee?.name||'(s/d)'])[0].trim();
+    docs[dr]=(docs[dr]||0)+1;
+  });
+  const won=phase[WON_SECTION]||0, lost=phase[LOST_SECTION]||0;
+  const inPipe=total-won-lost;
+  const decided=won+lost;
+  const winRate=decided?Math.round(won/decided*100):0;
+
+  // pills
+  const pills=[
+    {n:total,t:'Casos totales',c:'#1B2A4A'},
+    {n:inPipe,t:'En pipeline',c:'#00A6A6'},
+    {n:won,t:'Ganados',c:'#2E9E5B'},
+    {n:lost,t:'Perdidos',c:'#D64550'},
+    {n:winRate+'%',t:'Win rate',c:'#6B5B95'},
+  ];
+  $('pills').innerHTML=pills.map(p=>`<div class="pill"><div class="bar" style="background:${p.c}"></div>
+    <div class="n" style="color:${p.c}">${p.n}</div><div class="t">${p.t}</div></div>`).join('');
+
+  // funnel by phase
+  const maxP=Math.max(...PHASE_ORDER.map(p=>phase[p]||0),1);
+  $('funnel').innerHTML=PHASE_ORDER.map(p=>{
+    const v=phase[p]||0;const w=v/maxP*100;
+    return `<div class="frow"><div class="top"><span class="nm">${p}</span><span class="vv">${v}</span></div>
+      <div class="track"><div class="fillb" data-w="${w}" style="background:${PHASE_COLORS[p]}">${v>0?v:''}</div></div></div>`;
+  }).join('');
+
+  // donut won/lost/pipeline
+  const seg=[['Ganados',won,'#2E9E5B'],['Perdidos',lost,'#D64550'],['En pipeline',inPipe,'#8A94A6']];
+  let acc=0,grad=[];
+  seg.forEach(([n,v,c])=>{const fr=v/(total||1);const a=acc*360,b=(acc+fr)*360;if(fr>0)grad.push(`${c} ${a}deg ${b}deg`);acc+=fr;});
+  if(!grad.length)grad=['#e5e8ef 0deg 360deg'];
+  const d=$('donut');d.style.background=`conic-gradient(${grad.join(',')})`;d.style.borderRadius='50%';
+  d.style.webkitMask='radial-gradient(circle 54px at center,transparent 98%,#000 100%)';
+  d.style.mask='radial-gradient(circle 54px at center,transparent 98%,#000 100%)';
+  $('dCenter').textContent=winRate+'%';
+  $('legend').innerHTML=seg.map(([n,v,c])=>`<div class="row"><span class="dot" style="background:${c}"></span>
+    <span class="nm">${n}</span><span class="pct">${Math.round(v/(total||1)*100)}%</span><span class="ct">${v} caso${v===1?'':'s'}</span></div>`).join('');
+
+  // client type bars
+  const ctEntries=Object.entries(types).sort((a,b)=>b[1]-a[1]);
+  const maxT=Math.max(...ctEntries.map(e=>e[1]),1);
+  $('ctype').innerHTML=ctEntries.map(([k,v])=>{
+    const w=v/maxT*100;const c=TYPE_COLORS[k]||'#8A94A6';
+    return `<div class="frow"><div class="top"><span class="nm">${k}</span><span class="vv">${v}</span></div>
+      <div class="track"><div class="fillb" data-w="${w}" style="background:${c}">${v}</div></div></div>`;
+  }).join('');
+
+  // by doctor table
+  const docEntries=Object.entries(docs).sort((a,b)=>b[1]-a[1]);
+  $('byDoc').innerHTML='<table class="tbl"><tbody>'+docEntries.map(([k,v])=>
+    `<tr><td class="doc">${k}</td><td style="text-align:right;font-weight:700">${v} caso${v===1?'':'s'}</td></tr>`).join('')+'</tbody></table>';
+
+  // cases table
+  const rows=tasks.map(t=>{
+    const p=phaseOf(t);const ct=cf(t,'Client Type')||'—';
+    const dr=(t.name.match(/Dr\.?\s*[^\-—]+/i)||['—'])[0].trim();
+    const pat=t.name.replace(/^Case\s*[—-]\s*/i,'').split(/[-—]/).slice(1).join('-').trim()||t.name;
+    return `<tr>
+      <td class="doc">${dr}</td><td>${pat}</td>
+      <td><span class="chip" style="background:${(PHASE_COLORS[p]||'#8A94A6')}22;color:${PHASE_COLORS[p]||'#555'}">${p}</span></td>
+      <td><span class="chip" style="background:${(TYPE_COLORS[ct]||'#8A94A6')}22;color:${TYPE_COLORS[ct]||'#555'}">${ct}</span></td>
+      <td>${t.assignee?.name||'—'}</td></tr>`;
+  }).join('');
+  $('caseTbl').querySelector('tbody').innerHTML=rows;
+
+  $('empty').style.display='none';
+  $('dash').style.display='block';
+  $('ts').textContent=new Date().toLocaleString('es-ES');
+  requestAnimationFrame(()=>document.querySelectorAll('.fillb').forEach(f=>f.style.width=f.dataset.w+'%'));
+}
+
+// auto-load if token present
+if(localStorage.getItem('asana_token'))load(); else showModal();
+</script>
+</body>
+</html>
