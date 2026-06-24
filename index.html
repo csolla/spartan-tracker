@@ -904,10 +904,11 @@ function App() {
                 <tbody>
                   {lane.targets.map((t,ti) => {
                     const isMilestone=t.format==="milestone"; const showGroup=t.group&&(ti===0||lane.targets[ti-1].group!==t.group);
+                    const lane3Row=lane.color==="#2A9D8F"; const lane3Bg=lane3Row?"#F2F2F3":undefined;
                     const goalDisp=t.goalLabel||(t.goal!=null?fmtVal(t.goal,t.format):"—"); const rows=[];
                     if (showGroup) rows.push(<tr key={`grp-${t.group}`}><td colSpan={3+MEETINGS.length} style={{ padding:"5px 12px 2px", fontSize:10, fontWeight:700, color:"#999", textTransform:"uppercase", letterSpacing:"0.06em", background:"#FAFAFA", borderTop:ti>0?"1px solid #E8E8E8":"none" }}>{t.group}</td></tr>);
                     if (t.composite) {
-                      rows.push(<tr key={t.id} style={{ borderTop:"1px solid #F0F0F0" }}>
+                      rows.push(<tr key={t.id} style={{ borderTop:"1px solid #F0F0F0", background:lane3Bg }}>
                         <td style={{ padding:"8px 12px", color:"#333", fontWeight:600, fontSize:12 }}>{t.label}</td>
                         <td style={{ textAlign:"center", padding:"4px 3px", color:"#999", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{goalDisp}</td>
                         {MEETINGS.map(m => {
@@ -944,7 +945,7 @@ function App() {
                       });
                       return rows;
                     }
-                    rows.push(<tr key={t.id} style={{ borderTop:"1px solid #F0F0F0" }}>
+                    rows.push(<tr key={t.id} style={{ borderTop:"1px solid #F0F0F0", background:lane3Bg }}>
                       <td style={{ padding:"8px 12px", color:"#333", fontWeight:500, fontSize:12 }}>{t.label}</td>
                       <td style={{ textAlign:"center", padding:"4px 3px", color:"#999", fontSize:11, fontFamily:"'DM Mono',monospace" }}>{goalDisp}</td>
                       {MEETINGS.map(m => {
